@@ -549,15 +549,38 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
             const db = await getDb();
             const localDocsMetadata = await db.getAll(DOCS_METADATA_STORE_NAME);
             
-            const finalDocs = safeArray(validatedMergedData.documents, (doc: any) => {
+            // 1. Process merged documents from Sync (Remote + Local overrides)
+            const syncedDocsIds = new Set(validatedMergedData.documents.map(d => d.id));
+            
+            let finalDocs = safeArray(validatedMergedData.documents, (doc: any) => {
                 if (!doc || typeof doc !== 'object' || !doc.id) return undefined;
                 const localMeta = (localDocsMetadata as any[]).find((meta: any) => meta.id === doc.id);
+                // Keep local state if available, otherwise default to pending_download
                 const mergedDoc = {
                     ...doc,
                     localState: localMeta?.localState || doc.localState || 'pending_download'
                 };
                 return validateDocuments(mergedDoc, userRef.current?.id || '');
             });
+
+            // 2. SAFETY CHECK: Re-inject local-only documents that might have been dropped by Sync
+            // Use a Map for faster lookup and merging
+            const finalDocsMap = new Map(finalDocs.map(d => [d.id, d]));
+
+            (localDocsMetadata as any[]).forEach((localMeta: any) => {
+                // If it's pending upload or error (failed upload), and not in the synced list
+                if ((localMeta.localState === 'pending_upload' || localMeta.localState === 'error') && !syncedDocsIds.has(localMeta.id)) {
+                    if (!finalDocsMap.has(localMeta.id)) {
+                        const restoredDoc = validateDocuments(localMeta, userRef.current?.id || '');
+                        if (restoredDoc) {
+                            console.log(`Restoring pending document: ${restoredDoc.name}`);
+                            finalDocsMap.set(localMeta.id, restoredDoc);
+                        }
+                    }
+                }
+            });
+            
+            finalDocs = Array.from(finalDocsMap.values());
 
             const finalData = { ...validatedMergedData, documents: finalDocs };
 
@@ -657,22 +680,27 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     React.useEffect(() => {
         if (!isOnline || !user || isDataLoading) return;
 
+        // Ensure we handle downloads strictly one by one to avoid network flooding.
+        // If ANY document is currently in 'downloading' state, we wait.
+        const isDownloading = data.documents.some(d => d.localState === 'downloading');
+        if (isDownloading) return;
+
         // Find the first document that needs downloading
         const pendingDoc = data.documents.find(d => d.localState === 'pending_download');
 
         if (pendingDoc) {
             console.log(`Auto-downloading document: ${pendingDoc.name}`);
             
-            // Add a small delay to prioritize UI responsiveness
+            // Increased delay to 1s to allow network to breathe between downloads
             const timer = setTimeout(() => {
                 getDocumentFile(pendingDoc.id).catch(e => {
-                    console.warn(`Background download failed for ${pendingDoc.name}`, e);
+                    // console.warn is handled inside getDocumentFile now
                 });
-            }, 500);
+            }, 1000);
 
             return () => clearTimeout(timer);
         }
-    }, [data.documents, isOnline, user, isDataLoading]); // Dependency on data.documents creates the loop
+    }, [data.documents, isOnline, user, isDataLoading]); 
 
     const getDocumentFile = React.useCallback(async (docId: string): Promise<File | null> => {
         const db = await getDb();
@@ -709,7 +737,35 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
                 
                 return downloadedFile;
             } catch (e: any) {
-                console.error("Download failed:", e.message || e);
+                // Better Error Extraction
+                let errorMsg = 'Unknown error';
+                
+                // Log full error object for debugging
+                console.error("Document download internal error:", e);
+
+                if (e instanceof Error) {
+                    errorMsg = e.message;
+                } else if (typeof e === 'object' && e !== null) {
+                    // Specific check for Supabase storage error structure
+                    if (e.statusCode === '404' || e.error === 'Object not found' || (e.message && e.message.includes('not found'))) {
+                        errorMsg = 'File not found on server (404).';
+                    } else {
+                        // Try to find any descriptive property
+                        errorMsg = e.message || e.error_description || (e.code ? `Error Code: ${e.code}` : null) || JSON.stringify(e);
+                    }
+                    if (errorMsg === '{}') errorMsg = 'Unknown Error (Empty Object)';
+                } else {
+                    errorMsg = String(e);
+                }
+                
+                // Suppress console error for simple network failures to reduce noise
+                const isNetworkError = errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('network');
+                
+                if (isNetworkError) {
+                    console.warn(`Download paused for ${doc.name}: Network unavailable.`);
+                } else {
+                    console.error(`Download failed for ${doc.name}:`, errorMsg);
+                }
                 
                 // Mark as error so we can retry later.
                 // We update metadata store too so the error persists across reloads.
