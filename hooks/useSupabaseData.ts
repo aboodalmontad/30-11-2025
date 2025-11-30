@@ -358,7 +358,6 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     userRef.current = user;
 
     // --- EFFECTIVE USER ID LOGIC (CACHE FIRST) ---
-    // Initialize immediately from LocalStorage to avoid network blocking
     const [effectiveUserId, setEffectiveUserId] = React.useState<string | null>(() => {
         if (!user) return null;
         if (typeof window !== 'undefined') {
@@ -549,7 +548,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
             const db = await getDb();
             const localDocsMetadata = await db.getAll(DOCS_METADATA_STORE_NAME);
             
-            // 1. Process merged documents from Sync (Remote + Local overrides)
+            // 1. Process merged documents from Sync
             const syncedDocsIds = new Set(validatedMergedData.documents.map(d => d.id));
             
             let finalDocs = safeArray(validatedMergedData.documents, (doc: any) => {
@@ -675,32 +674,66 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         setDirty(true);
     };
 
-    // --- AUTO-DOWNLOAD BACKGROUND SERVICE (WhatsApp Style) ---
-    // This effect ensures files are downloaded to the device automatically when online.
+    // --- AUTO-UPLOAD BACKGROUND SERVICE ---
+    // Automatically upload files that are pending upload
     React.useEffect(() => {
-        if (!isOnline || !user || isDataLoading) return;
+        if (!isOnline || !user) return;
 
-        // Ensure we handle downloads strictly one by one to avoid network flooding.
-        // If ANY document is currently in 'downloading' state, we wait.
-        const isDownloading = data.documents.some(d => d.localState === 'downloading');
-        if (isDownloading) return;
-
-        // Find the first document that needs downloading
-        const pendingDoc = data.documents.find(d => d.localState === 'pending_download');
-
-        if (pendingDoc) {
-            console.log(`Auto-downloading document: ${pendingDoc.name}`);
+        const uploadNext = async () => {
+            // Find a document that needs uploading
+            // We verify it has a valid ID and storage path to be safe
+            const pendingDoc = data.documents.find(d => d.localState === 'pending_upload' && d.storagePath);
             
-            // Increased delay to 1s to allow network to breathe between downloads
-            const timer = setTimeout(() => {
-                getDocumentFile(pendingDoc.id).catch(e => {
-                    // console.warn is handled inside getDocumentFile now
-                });
-            }, 1000);
+            if (!pendingDoc) return;
 
-            return () => clearTimeout(timer);
-        }
-    }, [data.documents, isOnline, user, isDataLoading]); 
+            console.log(`Starting background upload for: ${pendingDoc.name}`);
+            const db = await getDb();
+            const file = await db.get(DOCS_FILES_STORE_NAME, pendingDoc.id);
+            
+            if (!file) {
+                console.warn(`File content missing locally for ${pendingDoc.name}. Marking as error.`);
+                const errorDoc = { ...pendingDoc, localState: 'error' };
+                await db.put(DOCS_METADATA_STORE_NAME, errorDoc, pendingDoc.id);
+                updateData(p => ({...p, documents: p.documents.map(d => d.id === pendingDoc.id ? errorDoc as CaseDocument : d)}));
+                return;
+            }
+
+            const supabase = getSupabaseClient();
+            if (!supabase) return;
+
+            try {
+                // Perform Upload
+                const { error: uploadError } = await supabase.storage
+                    .from('documents')
+                    .upload(pendingDoc.storagePath, file, {
+                        cacheControl: '3600',
+                        upsert: true
+                    });
+
+                if (uploadError) throw uploadError;
+
+                console.log(`Upload successful: ${pendingDoc.name}`);
+                
+                // Update state to Synced
+                const syncedDoc = { ...pendingDoc, localState: 'synced' };
+                await db.put(DOCS_METADATA_STORE_NAME, syncedDoc, pendingDoc.id);
+                updateData(p => ({...p, documents: p.documents.map(d => d.id === pendingDoc.id ? syncedDoc as CaseDocument : d)}));
+
+            } catch (e: any) {
+                let errorMsg = e.message || 'Upload failed';
+                console.error(`Upload failed for ${pendingDoc.name}:`, errorMsg);
+                
+                // Mark as error to stop the loop for this specific file
+                const errorDoc = { ...pendingDoc, localState: 'error' };
+                await db.put(DOCS_METADATA_STORE_NAME, errorDoc, pendingDoc.id);
+                updateData(p => ({...p, documents: p.documents.map(d => d.id === pendingDoc.id ? errorDoc as CaseDocument : d)}));
+            }
+        };
+
+        // Check for uploads every 2 seconds to avoid flooding
+        const timer = setTimeout(uploadNext, 2000);
+        return () => clearTimeout(timer);
+    }, [data.documents, isOnline, user, updateData]);
 
     const getDocumentFile = React.useCallback(async (docId: string): Promise<File | null> => {
         const db = await getDb();
@@ -711,70 +744,95 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         const localFile = await db.get(DOCS_FILES_STORE_NAME, docId);
         if (localFile) return localFile;
         
-        // Ensure we are online before trying network fetch
-        if (!isOnline || !supabase) {
-            return null;
-        }
+        if (!isOnline || !supabase) return null;
         
-        if ((doc.localState === 'pending_download' || doc.localState === 'error')) {
+        if (!doc.storagePath) {
+             console.error(`Cannot download ${doc.name}: Missing storage path.`);
+             await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
+             updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
+             return null;
+        }
+
+        if (doc.localState === 'pending_download' || doc.localState === 'error') {
             try {
-                // Update state to downloading to prevent multiple attempts
                 updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'downloading' } : d)}));
                 
                 const { data: blob, error } = await supabase.storage.from('documents').download(doc.storagePath);
                 
                 if (error) throw error;
-                if (!blob) throw new Error("Empty blob");
+                if (!blob) throw new Error("Empty blob received");
                 
                 const downloadedFile = new File([blob], doc.name, { type: doc.type });
                 
-                // Save to IndexedDB
                 await db.put(DOCS_FILES_STORE_NAME, downloadedFile, doc.id);
                 await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'synced' }, doc.id);
                 
-                // Update app state
                 updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'synced'} : d)}));
                 
                 return downloadedFile;
             } catch (e: any) {
-                // Better Error Extraction
-                let errorMsg = 'Unknown error';
+                let errorMsg = '';
                 
-                // Log full error object for debugging
-                console.error("Document download internal error:", e);
-
-                if (e instanceof Error) {
+                if (typeof e === 'string') {
+                    errorMsg = e;
+                } else if (e instanceof Error) {
                     errorMsg = e.message;
                 } else if (typeof e === 'object' && e !== null) {
-                    // Specific check for Supabase storage error structure
-                    if (e.statusCode === '404' || e.error === 'Object not found' || (e.message && e.message.includes('not found'))) {
+                    errorMsg = (e as any).message || (e as any).error || (e as any).error_description || '';
+                    if (!errorMsg && (e as any).code) errorMsg = `Error Code: ${(e as any).code}`;
+                    
+                    if ((e as any).statusCode === '404' || (e as any).error === 'Object not found' || errorMsg.includes('not found')) {
                         errorMsg = 'File not found on server (404).';
-                    } else {
-                        // Try to find any descriptive property
-                        errorMsg = e.message || e.error_description || (e.code ? `Error Code: ${e.code}` : null) || JSON.stringify(e);
                     }
-                    if (errorMsg === '{}') errorMsg = 'Unknown Error (Empty Object)';
-                } else {
-                    errorMsg = String(e);
                 }
-                
-                // Suppress console error for simple network failures to reduce noise
+
+                if (!errorMsg) {
+                    try {
+                        const json = JSON.stringify(e);
+                        errorMsg = json === '{}' ? 'Unknown error object' : json;
+                    } catch {
+                        errorMsg = 'Unparsable Error';
+                    }
+                }
+
                 const isNetworkError = errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('network');
                 
                 if (isNetworkError) {
-                    console.warn(`Download paused for ${doc.name}: Network unavailable.`);
+                    console.debug(`Download paused for ${doc.name}: Network unavailable.`);
                 } else {
                     console.error(`Download failed for ${doc.name}:`, errorMsg);
                 }
                 
-                // Mark as error so we can retry later.
-                // We update metadata store too so the error persists across reloads.
                 await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
                 updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
             }
         }
         return null;
     }, [data.documents, isOnline, updateData]);
+
+    // --- AUTO-DOWNLOAD BACKGROUND SERVICE (WhatsApp Style) ---
+    React.useEffect(() => {
+        if (!isOnline || !user || isDataLoading) return;
+
+        // Prevent parallel downloads
+        const isDownloading = data.documents.some(d => d.localState === 'downloading');
+        if (isDownloading) return;
+
+        // Find the first document that needs downloading
+        const pendingDoc = data.documents.find(d => d.localState === 'pending_download');
+
+        if (pendingDoc) {
+            console.log(`Auto-downloading document: ${pendingDoc.name}`);
+            
+            const timer = setTimeout(() => {
+                getDocumentFile(pendingDoc.id).catch(() => {
+                    // Errors are handled inside getDocumentFile
+                });
+            }, 1000);
+
+            return () => clearTimeout(timer);
+        }
+    }, [data.documents, isOnline, user, isDataLoading, getDocumentFile]); 
 
     // ... (rest of the hook matches previous structure with image compression in addDocuments)
     return {

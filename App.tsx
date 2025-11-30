@@ -70,7 +70,7 @@ const Navbar: React.FC<{
                     <div className="flex flex-col items-start sm:flex-row sm:items-baseline gap-0 sm:gap-2">
                         <h1 className="text-xl font-bold text-gray-800">مكتب المحامي</h1>
                         <div className="flex items-center gap-1 text-xs text-gray-500">
-                            <span>الإصدار: 30-11-2025</span>
+                            <span>الإصدار: 1-12-2025</span>
                             {profile && (
                                 <>
                                     <span className="mx-1 text-gray-300">|</span>
