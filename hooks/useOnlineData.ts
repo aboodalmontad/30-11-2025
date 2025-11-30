@@ -171,6 +171,12 @@ export const fetchDeletionsFromSupabase = async (): Promise<SyncDeletion[]> => {
         } else {
             msg = String(err);
         }
+        
+        // Suppress console error for network issues, let useSync handle UI feedback
+        if (msg.includes('Failed to fetch') || msg.toLowerCase().includes('network')) {
+             throw new Error("Failed to fetch"); 
+        }
+
         console.error("Fetch deletions error:", msg);
         throw new Error(msg); 
     }

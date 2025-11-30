@@ -1,3 +1,4 @@
+
 import * as React from 'react';
 import { Client, Session, AdminTask, Appointment, AccountingEntry, Case, Stage, Invoice, InvoiceItem, CaseDocument, AppData, DeletedIds, getInitialDeletedIds, Profile, SiteFinancialEntry, Permissions, defaultPermissions } from '../types';
 import { useOnlineStatus } from './useOnlineStatus';
@@ -273,6 +274,72 @@ const validateAndFixData = (loadedData: any, user: User | null): AppData => {
     };
 };
 
+// --- Image Compression Utility ---
+const compressImage = async (file: File): Promise<File> => {
+    // Only compress images
+    if (!file.type.startsWith('image/')) return file;
+    // Don't compress small images (< 300KB)
+    if (file.size < 300 * 1024) return file;
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            img.src = e.target?.result as string;
+        };
+        reader.onerror = (e) => reject(e);
+
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            // Max dimension (e.g., 1920px is enough for documents)
+            const MAX_WIDTH = 1920;
+            const MAX_HEIGHT = 1920;
+
+            if (width > height) {
+                if (width > MAX_WIDTH) {
+                    height *= MAX_WIDTH / width;
+                    width = MAX_WIDTH;
+                }
+            } else {
+                if (height > MAX_HEIGHT) {
+                    width *= MAX_HEIGHT / height;
+                    height = MAX_HEIGHT;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(file); // Fallback
+                return;
+            }
+            
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    // Create new file with compressed data
+                    const compressedFile = new File([blob], file.name, {
+                        type: 'image/jpeg', // Standardize to JPEG for better compression
+                        lastModified: Date.now(),
+                    });
+                    console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB -> ${(compressedFile.size/1024).toFixed(0)}KB`);
+                    resolve(compressedFile);
+                } else {
+                    resolve(file); // Fallback
+                }
+            }, 'image/jpeg', 0.7); // 0.7 Quality is good for documents
+        };
+        
+        reader.readAsDataURL(file);
+    });
+};
+
 export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     const [data, setData] = React.useState<AppData>(getInitialData);
     const [deletedIds, setDeletedIds] = React.useState<DeletedIds>(getInitialDeletedIds);
@@ -292,7 +359,6 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
 
     // --- EFFECTIVE USER ID LOGIC (CACHE FIRST) ---
     // Initialize immediately from LocalStorage to avoid network blocking
-    // This allows the app to know which DB bucket to load from instanty.
     const [effectiveUserId, setEffectiveUserId] = React.useState<string | null>(() => {
         if (!user) return null;
         if (typeof window !== 'undefined') {
@@ -301,30 +367,27 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         return user.id;
     });
 
-    // Background: Determine effective ID from loaded profile data and update cache if changed
+    // Background: Determine effective ID from loaded profile data
     React.useEffect(() => {
         if (!user) return;
         const currentUserProfile = data.profiles.find(p => p.id === user.id);
         
-        // Default to user.id
         let newOwnerId = user.id;
         
         if (currentUserProfile) {
-            // If user has a lawyer_id, they are an assistant, so the owner is the lawyer.
             if (currentUserProfile.lawyer_id) {
                 newOwnerId = currentUserProfile.lawyer_id;
             }
         }
 
-        // Only update state if it actually changed to avoid re-renders
         if (newOwnerId !== effectiveUserId) {
-            console.log("Detected new data owner ID from profile, updating context...", newOwnerId);
+            console.log("Detected new data owner ID, updating context...", newOwnerId);
             setEffectiveUserId(newOwnerId);
             localStorage.setItem(`lawyer_app_owner_${user.id}`, newOwnerId);
         }
     }, [user, data.profiles, effectiveUserId]);
 
-    // Current user's permissions
+    // Current user's permissions logic...
     const currentUserPermissions: Permissions = React.useMemo(() => {
         if (!user) return defaultPermissions;
         const currentUserProfile = data.profiles.find(p => p.id === user.id);
@@ -381,6 +444,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         updateData(validated);
     }, [updateData]);
 
+    // Settings Load
     React.useEffect(() => {
         const settingsKey = `userSettings_${user?.id}`;
         try {
@@ -400,21 +464,19 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         localStorage.setItem(settingsKey, JSON.stringify(newSettings));
     };
 
-    // --- MAIN DATA LOADING EFFECT (INSTANT LOAD STRATEGY) ---
+    // --- MAIN DATA LOADING EFFECT (INSTANT LOAD) ---
     React.useEffect(() => {
         if (!user || isAuthLoading) {
             if (!isAuthLoading) setIsDataLoading(false);
             return;
         }
 
-        // Only show loader if we have absolutely no data (first run ever on this device)
         if (data.clients.length === 0 && data.profiles.length === 0) setIsDataLoading(true);
 
         let cancelled = false;
 
         const loadData = async () => {
-            // Determine owner ID synchronously from state (which was init from LS)
-            // This prevents waiting for network to decide which DB key to read.
+            // Use cached effectiveUserId for instant load
             const ownerId = effectiveUserId || user.id;
 
             try {
@@ -440,10 +502,9 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
                 setData(finalData);
                 setDeletedIds(storedDeletedIds || getInitialDeletedIds());
                 
-                // HIDE LOADER IMMEDIATELY - User can see data now
+                // HIDE LOADER IMMEDIATELY
                 setIsDataLoading(false); 
 
-                // Mark as synced locally if offline
                 if (!navigator.onLine) {
                     setSyncStatus('synced');
                 }
@@ -460,11 +521,9 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         return () => { cancelled = true; };
     }, [user, isAuthLoading]); 
     
-    // Reload data if effectiveUserId changes significantly (e.g. switching accounts)
+    // Reload data if effectiveUserId changes
     React.useEffect(() => {
         if (!user || isAuthLoading || isDataLoading) return;
-        
-        // This effect only runs if effectiveUserId changes *after* initial load
         const reloadForNewOwner = async () => {
              const ownerId = effectiveUserId || user.id;
              console.log("Reloading data for new owner:", ownerId);
@@ -540,19 +599,17 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         isOnline, isAuthLoading, syncStatus
     });
 
-    // Background Sync Trigger - Runs once after data loads and we are online
+    // Background Sync Trigger
     React.useEffect(() => {
         if (!isDataLoading && isOnline && user) {
-            // Trigger a background refresh gracefully after initial load
             const timer = setTimeout(() => {
-                console.log("Triggering background sync...");
                 fetchAndRefresh();
             }, 1000);
             return () => clearTimeout(timer);
         }
     }, [isDataLoading, isOnline, user]); 
 
-    // Supabase Realtime Subscription (Only if Online)
+    // Supabase Realtime Subscription
     React.useEffect(() => {
         if (!isOnline || !user) return;
         const supabase = getSupabaseClient();
@@ -565,8 +622,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
                 const relevantId = effectiveUserId || user.id;
                 
                 if (record && (record.user_id === relevantId || record.lawyer_id === relevantId || record.id === relevantId)) {
-                    console.log('Realtime change detected:', payload);
-                    // Silently refresh without alerting the user
+                    console.log('Realtime change detected, refreshing...');
                     fetchAndRefresh();
                 }
             })
@@ -596,6 +652,75 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         setDirty(true);
     };
 
+    // --- AUTO-DOWNLOAD BACKGROUND SERVICE (WhatsApp Style) ---
+    // This effect ensures files are downloaded to the device automatically when online.
+    React.useEffect(() => {
+        if (!isOnline || !user || isDataLoading) return;
+
+        // Find the first document that needs downloading
+        const pendingDoc = data.documents.find(d => d.localState === 'pending_download');
+
+        if (pendingDoc) {
+            console.log(`Auto-downloading document: ${pendingDoc.name}`);
+            
+            // Add a small delay to prioritize UI responsiveness
+            const timer = setTimeout(() => {
+                getDocumentFile(pendingDoc.id).catch(e => {
+                    console.warn(`Background download failed for ${pendingDoc.name}`, e);
+                });
+            }, 500);
+
+            return () => clearTimeout(timer);
+        }
+    }, [data.documents, isOnline, user, isDataLoading]); // Dependency on data.documents creates the loop
+
+    const getDocumentFile = React.useCallback(async (docId: string): Promise<File | null> => {
+        const db = await getDb();
+        const supabase = getSupabaseClient();
+        const doc = data.documents.find(d => d.id === docId);
+        if (!doc) return null;
+        
+        const localFile = await db.get(DOCS_FILES_STORE_NAME, docId);
+        if (localFile) return localFile;
+        
+        // Ensure we are online before trying network fetch
+        if (!isOnline || !supabase) {
+            return null;
+        }
+        
+        if ((doc.localState === 'pending_download' || doc.localState === 'error')) {
+            try {
+                // Update state to downloading to prevent multiple attempts
+                updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'downloading' } : d)}));
+                
+                const { data: blob, error } = await supabase.storage.from('documents').download(doc.storagePath);
+                
+                if (error) throw error;
+                if (!blob) throw new Error("Empty blob");
+                
+                const downloadedFile = new File([blob], doc.name, { type: doc.type });
+                
+                // Save to IndexedDB
+                await db.put(DOCS_FILES_STORE_NAME, downloadedFile, doc.id);
+                await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'synced' }, doc.id);
+                
+                // Update app state
+                updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'synced'} : d)}));
+                
+                return downloadedFile;
+            } catch (e: any) {
+                console.error("Download failed:", e.message || e);
+                
+                // Mark as error so we can retry later.
+                // We update metadata store too so the error persists across reloads.
+                await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
+                updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
+            }
+        }
+        return null;
+    }, [data.documents, isOnline, updateData]);
+
+    // ... (rest of the hook matches previous structure with image compression in addDocuments)
     return {
         ...data,
         setClients: (updater) => updateData(prev => ({ ...prev, clients: updater(prev.clients) })),
@@ -675,45 +800,46 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         addDocuments: async (caseId: string, files: FileList) => {
              const db = await getDb();
              const newDocs: CaseDocument[] = [];
+             
+             // Process files sequentially to handle compression
              for (let i = 0; i < files.length; i++) {
-                 const file = files[i];
+                 let file = files[i];
+                 
+                 try {
+                     // Attempt compression
+                     file = await compressImage(file);
+                 } catch (e) {
+                     console.warn("Image compression failed, using original file", e);
+                 }
+
                  const docId = `doc-${Date.now()}-${i}`;
                  const lastDot = file.name.lastIndexOf('.');
                  const extension = lastDot !== -1 ? file.name.substring(lastDot) : '';
-                 const safeStoragePath = `${effectiveUserId || user!.id}/${caseId}/${docId}${extension}`;
+                 // Normalize extension for compressed images
+                 const finalExtension = file.type === 'image/jpeg' && extension !== '.jpg' && extension !== '.jpeg' ? '.jpg' : extension;
+                 
+                 const safeStoragePath = `${effectiveUserId || user!.id}/${caseId}/${docId}${finalExtension}`;
+                 
                  const doc: CaseDocument = {
-                     id: docId, caseId, userId: effectiveUserId || user!.id, name: file.name, type: file.type || 'application/octet-stream', size: file.size, addedAt: new Date(), storagePath: safeStoragePath, localState: 'pending_upload', updated_at: new Date(),
+                     id: docId, 
+                     caseId, 
+                     userId: effectiveUserId || user!.id, 
+                     name: file.name, 
+                     type: file.type || 'application/octet-stream', 
+                     size: file.size, 
+                     addedAt: new Date(), 
+                     storagePath: safeStoragePath, 
+                     localState: 'pending_upload', 
+                     updated_at: new Date(),
                  };
+                 
                  await db.put(DOCS_FILES_STORE_NAME, file, doc.id);
                  await db.put(DOCS_METADATA_STORE_NAME, doc, doc.id);
                  newDocs.push(doc);
              }
              updateData(p => ({...p, documents: [...p.documents, ...newDocs]}));
         },
-        getDocumentFile: async (docId: string): Promise<File | null> => {
-            const db = await getDb();
-            const supabase = getSupabaseClient();
-            const doc = data.documents.find(d => d.id === docId);
-            if (!doc) return null;
-            const localFile = await db.get(DOCS_FILES_STORE_NAME, docId);
-            if (localFile) return localFile;
-            if (doc.localState === 'pending_download' && isOnline && supabase) {
-                try {
-                    updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'downloading' } : d)}));
-                    const { data: blob, error } = await supabase.storage.from('documents').download(doc.storagePath);
-                    if (error || !blob) throw error || new Error("Empty blob");
-                    const downloadedFile = new File([blob], doc.name, { type: doc.type });
-                    await db.put(DOCS_FILES_STORE_NAME, downloadedFile, doc.id);
-                    await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'synced' }, doc.id);
-                    updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'synced'} : d)}));
-                    return downloadedFile;
-                } catch (e) {
-                    await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
-                    updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
-                }
-            }
-            return null;
-        },
+        getDocumentFile,
         postponeSession: (sessionId: string, newDate: Date, newReason: string) => {
              updateData(prev => {
                  const newClients = prev.clients.map(client => {
