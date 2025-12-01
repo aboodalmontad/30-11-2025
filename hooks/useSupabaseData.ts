@@ -340,6 +340,33 @@ const compressImage = async (file: File): Promise<File> => {
     });
 };
 
+// Helper function to robustly extract error messages
+const extractErrorMessage = (e: any): string => {
+    if (!e) return 'Unknown Error';
+    if (typeof e === 'string') return e;
+    if (e instanceof Error) return e.message;
+    
+    if (typeof e === 'object') {
+        // Prioritize explicit message properties
+        if (e.message) return e.message;
+        if (e.error_description) return e.error_description;
+        if (typeof e.error === 'string') return e.error; 
+        
+        // Check for status codes
+        if (e.statusCode === 404 || e.status === 404) return 'File not found on server (404)';
+        if (e.statusCode === '404') return 'File not found on server (404)';
+        
+        // Fallback: Try to stringify, but prevent "{}"
+        try {
+            const json = JSON.stringify(e);
+            if (json !== '{}') return json;
+        } catch {}
+        
+        return 'Unknown Error Object (Check Console)';
+    }
+    return String(e);
+};
+
 export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     const [data, setData] = React.useState<AppData>(getInitialData);
     const [deletedIds, setDeletedIds] = React.useState<DeletedIds>(getInitialDeletedIds);
@@ -360,8 +387,12 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     // --- EFFECTIVE USER ID LOGIC (CACHE FIRST) ---
     const [effectiveUserId, setEffectiveUserId] = React.useState<string | null>(() => {
         if (!user) return null;
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem(`lawyer_app_owner_${user.id}`) || user.id;
+        try {
+            if (typeof window !== 'undefined') {
+                return localStorage.getItem(`lawyer_app_owner_${user.id}`) || user.id;
+            }
+        } catch (e) {
+            console.warn("LocalStorage access failed (possibly disabled)", e);
         }
         return user.id;
     });
@@ -382,7 +413,11 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         if (newOwnerId !== effectiveUserId) {
             console.log("Detected new data owner ID, updating context...", newOwnerId);
             setEffectiveUserId(newOwnerId);
-            localStorage.setItem(`lawyer_app_owner_${user.id}`, newOwnerId);
+            try {
+                localStorage.setItem(`lawyer_app_owner_${user.id}`, newOwnerId);
+            } catch(e) {
+                console.warn("Failed to cache owner ID", e);
+            }
         }
     }, [user, data.profiles, effectiveUserId]);
 
@@ -432,7 +467,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
             const newData = typeof updater === 'function' ? (updater as (prevState: AppData) => AppData)(currentData) : updater;
             getDb().then(db => {
                 db.put(DATA_STORE_NAME, newData, effectiveUserId);
-            });
+            }).catch(err => console.error("DB Write Error (Safe to ignore)", err));
             setDirty(true);
             return newData;
         });
@@ -459,8 +494,10 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     const updateSettings = (updater: (prev: any) => any) => {
         const newSettings = updater(userSettings);
         setUserSettings(newSettings);
-        const settingsKey = `userSettings_${user?.id}`;
-        localStorage.setItem(settingsKey, JSON.stringify(newSettings));
+        try {
+            const settingsKey = `userSettings_${user?.id}`;
+            localStorage.setItem(settingsKey, JSON.stringify(newSettings));
+        } catch (e) { console.warn("Failed to save settings", e); }
     };
 
     // --- MAIN DATA LOADING EFFECT (INSTANT LOAD) ---
@@ -526,10 +563,14 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         const reloadForNewOwner = async () => {
              const ownerId = effectiveUserId || user.id;
              console.log("Reloading data for new owner:", ownerId);
-             const db = await getDb();
-             const storedData = await db.get(DATA_STORE_NAME, ownerId);
-             const validatedData = validateAndFixData(storedData, user);
-             setData(prev => ({...validatedData, documents: prev.documents})); 
+             try {
+                 const db = await getDb();
+                 const storedData = await db.get(DATA_STORE_NAME, ownerId);
+                 const validatedData = validateAndFixData(storedData, user);
+                 setData(prev => ({...validatedData, documents: prev.documents})); 
+             } catch (e) {
+                 console.error("Failed to reload for new owner", e);
+             }
         };
         reloadForNewOwner();
     }, [effectiveUserId]);
@@ -681,7 +722,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
 
         const uploadNext = async () => {
             // Find a document that needs uploading
-            // We verify it has a valid ID and storage path to be safe
+            // We verify it has a valid ID and storagePath to be safe
             const pendingDoc = data.documents.find(d => d.localState === 'pending_upload' && d.storagePath);
             
             if (!pendingDoc) return;
@@ -735,6 +776,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         return () => clearTimeout(timer);
     }, [data.documents, isOnline, user, updateData]);
 
+    // Define getDocumentFile BEFORE it is used in the auto-download effect to prevent hoisting issues
     const getDocumentFile = React.useCallback(async (docId: string): Promise<File | null> => {
         const db = await getDb();
         const supabase = getSupabaseClient();
@@ -746,8 +788,9 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
         
         if (!isOnline || !supabase) return null;
         
+        // Safety Check: Missing storage path
         if (!doc.storagePath) {
-             console.error(`Cannot download ${doc.name}: Missing storage path.`);
+             console.error(`Download failed for ${doc.name}: Storage path is missing in metadata.`);
              await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
              updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
              return null;
@@ -771,44 +814,28 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
                 
                 return downloadedFile;
             } catch (e: any) {
-                let errorMsg = '';
-                
-                if (typeof e === 'string') {
-                    errorMsg = e;
-                } else if (e instanceof Error) {
-                    errorMsg = e.message;
-                } else if (typeof e === 'object' && e !== null) {
-                    errorMsg = (e as any).message || (e as any).error || (e as any).error_description || '';
-                    if (!errorMsg && (e as any).code) errorMsg = `Error Code: ${(e as any).code}`;
-                    
-                    if ((e as any).statusCode === '404' || (e as any).error === 'Object not found' || errorMsg.includes('not found')) {
-                        errorMsg = 'File not found on server (404).';
-                    }
-                }
+                const errorMsg = extractErrorMessage(e);
 
-                if (!errorMsg) {
-                    try {
-                        const json = JSON.stringify(e);
-                        errorMsg = json === '{}' ? 'Unknown error object' : json;
-                    } catch {
-                        errorMsg = 'Unparsable Error';
-                    }
-                }
-
+                // Suppress console spam for common network issues
                 const isNetworkError = errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('network');
-                
+                const isNotFound = errorMsg.toLowerCase().includes('not found') || errorMsg.includes('404');
+
                 if (isNetworkError) {
                     console.debug(`Download paused for ${doc.name}: Network unavailable.`);
+                } else if (isNotFound) {
+                    console.warn(`Download failed for ${doc.name}: File not found on server.`);
                 } else {
-                    console.error(`Download failed for ${doc.name}:`, errorMsg);
+                    console.error(`Download failed for ${doc.name}: ${errorMsg}`);
                 }
                 
+                // Persist error state
                 await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
                 updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
             }
         }
         return null;
     }, [data.documents, isOnline, updateData]);
+
 
     // --- AUTO-DOWNLOAD BACKGROUND SERVICE (WhatsApp Style) ---
     React.useEffect(() => {
@@ -828,7 +855,7 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
                 getDocumentFile(pendingDoc.id).catch(() => {
                     // Errors are handled inside getDocumentFile
                 });
-            }, 1000);
+            }, 1500); // Slightly increased delay
 
             return () => clearTimeout(timer);
         }
@@ -837,15 +864,15 @@ export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
     // ... (rest of the hook matches previous structure with image compression in addDocuments)
     return {
         ...data,
-        setClients: (updater) => updateData(prev => ({ ...prev, clients: updater(prev.clients) })),
-        setAdminTasks: (updater) => updateData(prev => ({ ...prev, adminTasks: updater(prev.adminTasks) })),
-        setAppointments: (updater) => updateData(prev => ({ ...prev, appointments: updater(prev.appointments) })),
-        setAccountingEntries: (updater) => updateData(prev => ({ ...prev, accountingEntries: updater(prev.accountingEntries) })),
-        setInvoices: (updater) => updateData(prev => ({ ...prev, invoices: updater(prev.invoices) })),
-        setAssistants: (updater) => updateData(prev => ({ ...prev, assistants: updater(prev.assistants) })),
-        setDocuments: (updater) => updateData(prev => ({ ...prev, documents: updater(prev.documents) })),
-        setProfiles: (updater) => updateData(prev => ({ ...prev, profiles: updater(prev.profiles) })),
-        setSiteFinances: (updater) => updateData(prev => ({ ...prev, siteFinances: updater(prev.siteFinances) })),
+        setClients: (updater) => updateData(prev => ({ ...prev, clients: typeof updater === 'function' ? (updater as (p: Client[]) => Client[])(prev.clients) : updater })),
+        setAdminTasks: (updater) => updateData(prev => ({ ...prev, adminTasks: typeof updater === 'function' ? (updater as (p: AdminTask[]) => AdminTask[])(prev.adminTasks) : updater })),
+        setAppointments: (updater) => updateData(prev => ({ ...prev, appointments: typeof updater === 'function' ? (updater as (p: Appointment[]) => Appointment[])(prev.appointments) : updater })),
+        setAccountingEntries: (updater) => updateData(prev => ({ ...prev, accountingEntries: typeof updater === 'function' ? (updater as (p: AccountingEntry[]) => AccountingEntry[])(prev.accountingEntries) : updater })),
+        setInvoices: (updater) => updateData(prev => ({ ...prev, invoices: typeof updater === 'function' ? (updater as (p: Invoice[]) => Invoice[])(prev.invoices) : updater })),
+        setAssistants: (updater) => updateData(prev => ({ ...prev, assistants: typeof updater === 'function' ? (updater as (p: string[]) => string[])(prev.assistants) : updater })),
+        setDocuments: (updater) => updateData(prev => ({ ...prev, documents: typeof updater === 'function' ? (updater as (p: CaseDocument[]) => CaseDocument[])(prev.documents) : updater })),
+        setProfiles: (updater) => updateData(prev => ({ ...prev, profiles: typeof updater === 'function' ? (updater as (p: Profile[]) => Profile[])(prev.profiles) : updater })),
+        setSiteFinances: (updater) => updateData(prev => ({ ...prev, siteFinances: typeof updater === 'function' ? (updater as (p: SiteFinancialEntry[]) => SiteFinancialEntry[])(prev.siteFinances) : updater })),
         setFullData,
         allSessions: React.useMemo(() => data.clients.flatMap(c => c.cases.flatMap(cs => cs.stages.flatMap(st => st.sessions.map(s => ({...s, stageId: st.id, stageDecisionDate: st.decisionDate}))))), [data.clients]),
         unpostponedSessions: React.useMemo(() => {
