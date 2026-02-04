@@ -412,7 +412,25 @@ const HomePage: React.FC<HomePageProps> = ({
 
     // Memos
     const dailyData = React.useMemo(() => ({ dailySessions: allSessions.filter(s => isSameDay(s.date, selectedDate)), dailyAppointments: appointments.filter(a => isSameDay(a.date, selectedDate)) }), [selectedDate, allSessions, appointments]);
-    const upcomingSessions = React.useMemo(() => { const tomorrow = new Date(selectedDate); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(0, 0, 0, 0); return allSessions.filter(s => new Date(s.date) >= tomorrow).sort((a, b) => a.date.getTime() - b.date.getTime()); }, [allSessions, selectedDate]);
+    
+    // Robust sort for upcomingSessions to handle potential string dates
+    const upcomingSessions = React.useMemo(() => { 
+        const tomorrow = new Date(selectedDate); 
+        tomorrow.setDate(tomorrow.getDate() + 1); 
+        tomorrow.setHours(0, 0, 0, 0); 
+        
+        return allSessions
+            .filter(s => {
+                const sDate = s.date instanceof Date ? s.date : new Date(s.date);
+                return sDate >= tomorrow;
+            })
+            .sort((a, b) => {
+                const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+                const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+                return dateA.getTime() - dateB.getTime();
+            }); 
+    }, [allSessions, selectedDate]);
+
     const groupedTasks: Record<string, AdminTask[]> = React.useMemo(() => {
         const isCompleted = activeTaskTab === 'completed';
         const filtered = adminTasks.filter(task => {

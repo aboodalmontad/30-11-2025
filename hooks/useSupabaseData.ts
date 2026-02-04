@@ -165,848 +165,691 @@ const validateAndFixData = (loadedData: any, user: User | null): AppData => {
                  }),
              };
         }),
-        adminTasks: safeArray(loadedData.adminTasks, (task, index) => {
-            if (!isValidObject(task) || !task.id) return undefined;
+        adminTasks: safeArray(loadedData.adminTasks, (task) => {
+            if (!isValidObject(task) || !task.id || !task.task) return undefined;
             return {
                 id: String(task.id),
-                task: String(task.task || ''),
+                task: String(task.task),
                 dueDate: reviveDate(task.dueDate),
                 completed: !!task.completed,
                 importance: ['normal', 'important', 'urgent'].includes(task.importance) ? task.importance : 'normal',
-                assignee: task.assignee,
-                location: task.location,
+                assignee: String(task.assignee || 'بدون تخصيص'),
+                location: String(task.location || 'غير محدد'),
+                orderIndex: typeof task.orderIndex === 'number' ? task.orderIndex : 0,
                 updated_at: reviveDate(task.updated_at),
-                orderIndex: typeof task.orderIndex === 'number' ? task.orderIndex : index,
+                user_id: task.user_id,
             };
         }),
         appointments: safeArray(loadedData.appointments, (apt) => {
-            if (!isValidObject(apt) || !apt.id) return undefined;
+            if (!isValidObject(apt) || !apt.id || !apt.title) return undefined;
             return {
                 id: String(apt.id),
-                title: String(apt.title || ''),
-                time: String(apt.time || '00:00'),
+                title: String(apt.title),
+                time: String(apt.time),
                 date: reviveDate(apt.date),
                 importance: ['normal', 'important', 'urgent'].includes(apt.importance) ? apt.importance : 'normal',
                 completed: !!apt.completed,
                 notified: !!apt.notified,
-                reminderTimeInMinutes: Number(apt.reminderTimeInMinutes || 15),
-                assignee: apt.assignee,
+                reminderTimeInMinutes: typeof apt.reminderTimeInMinutes === 'number' ? apt.reminderTimeInMinutes : 15,
+                assignee: String(apt.assignee || 'بدون تخصيص'),
                 updated_at: reviveDate(apt.updated_at),
+                user_id: apt.user_id,
             };
         }),
         accountingEntries: safeArray(loadedData.accountingEntries, (entry) => {
-            if (!isValidObject(entry) || !entry.id) return undefined;
+            if (!isValidObject(entry) || !entry.id || typeof entry.amount !== 'number') return undefined;
             return {
                 id: String(entry.id),
-                type: ['income', 'expense'].includes(entry.type) ? entry.type : 'income',
-                amount: Number(entry.amount || 0),
+                type: ['income', 'expense'].includes(entry.type) ? entry.type : 'expense',
+                amount: Number(entry.amount),
                 date: reviveDate(entry.date),
                 description: String(entry.description || ''),
                 clientId: String(entry.clientId || ''),
                 caseId: String(entry.caseId || ''),
                 clientName: String(entry.clientName || ''),
                 updated_at: reviveDate(entry.updated_at),
+                user_id: entry.user_id,
             };
         }),
-        invoices: safeArray(loadedData.invoices, (invoice) => {
-            if (!isValidObject(invoice) || !invoice.id) return undefined;
+        invoices: safeArray(loadedData.invoices, (inv) => {
+            if (!isValidObject(inv) || !inv.id) return undefined;
             return {
-                id: String(invoice.id),
-                clientId: String(invoice.clientId || ''),
-                clientName: String(invoice.clientName || ''),
-                caseId: invoice.caseId,
-                caseSubject: invoice.caseSubject,
-                issueDate: reviveDate(invoice.issueDate),
-                dueDate: reviveDate(invoice.dueDate),
-                items: safeArray(invoice.items, (item) => {
+                id: String(inv.id),
+                clientId: String(inv.clientId),
+                clientName: String(inv.clientName),
+                caseId: inv.caseId ? String(inv.caseId) : undefined,
+                caseSubject: inv.caseSubject ? String(inv.caseSubject) : undefined,
+                issueDate: reviveDate(inv.issueDate),
+                dueDate: reviveDate(inv.dueDate),
+                items: safeArray(inv.items, (item) => {
                     if (!isValidObject(item) || !item.id) return undefined;
                     return {
                         id: String(item.id),
-                        description: String(item.description || ''),
-                        amount: Number(item.amount || 0),
+                        description: String(item.description),
+                        amount: Number(item.amount),
                         updated_at: reviveDate(item.updated_at),
                     };
                 }),
-                taxRate: Number(invoice.taxRate || 0),
-                discount: Number(invoice.discount || 0),
-                status: ['draft', 'sent', 'paid', 'overdue'].includes(invoice.status) ? invoice.status : 'draft',
-                notes: invoice.notes,
-                updated_at: reviveDate(invoice.updated_at),
+                taxRate: Number(inv.taxRate || 0),
+                discount: Number(inv.discount || 0),
+                status: ['draft', 'sent', 'paid', 'overdue'].includes(inv.status) ? inv.status : 'draft',
+                notes: String(inv.notes || ''),
+                updated_at: reviveDate(inv.updated_at),
+                user_id: inv.user_id,
             };
         }),
         assistants: validateAssistantsList(loadedData.assistants),
         documents: safeArray(loadedData.documents, (doc) => validateDocuments(doc, userId)),
-        profiles: safeArray(loadedData.profiles, (p) => {
-            if (!isValidObject(p) || !p.id) return undefined;
-            return {
-                id: String(p.id),
-                full_name: String(p.full_name || ''),
-                mobile_number: String(p.mobile_number || ''),
-                is_approved: !!p.is_approved,
-                is_active: p.is_active !== false,
-                mobile_verified: !!p.mobile_verified,
-                otp_code: p.otp_code,
-                otp_expires_at: p.otp_expires_at,
-                subscription_start_date: p.subscription_start_date || null,
-                subscription_end_date: p.subscription_end_date || null,
-                role: ['user', 'admin'].includes(p.role) ? p.role : 'user',
-                lawyer_id: p.lawyer_id || null, 
-                permissions: p.permissions || undefined, 
-                created_at: p.created_at,
-                updated_at: reviveDate(p.updated_at),
-            };
-        }),
-        siteFinances: safeArray(loadedData.siteFinances, (sf) => {
-            if (!isValidObject(sf) || !sf.id) return undefined;
-            return {
-                id: Number(sf.id),
-                user_id: sf.user_id || null,
-                type: ['income', 'expense'].includes(sf.type) ? sf.type : 'income',
-                payment_date: String(sf.payment_date || ''),
-                amount: Number(sf.amount || 0),
-                description: sf.description || null,
-                payment_method: sf.payment_method || null,
-                category: sf.category,
-                profile_full_name: sf.profile_full_name,
-                updated_at: reviveDate(sf.updated_at),
-            };
-        }),
+        profiles: safeArray(loadedData.profiles, (p) => ({
+            id: String(p.id),
+            full_name: String(p.full_name),
+            mobile_number: String(p.mobile_number),
+            is_approved: !!p.is_approved,
+            is_active: !!p.is_active,
+            mobile_verified: !!p.mobile_verified,
+            subscription_start_date: p.subscription_start_date,
+            subscription_end_date: p.subscription_end_date,
+            role: p.role || 'user',
+            lawyer_id: p.lawyer_id,
+            permissions: p.permissions || defaultPermissions,
+            created_at: p.created_at,
+            updated_at: reviveDate(p.updated_at),
+        })),
+        siteFinances: safeArray(loadedData.siteFinances, (sf) => ({
+            id: Number(sf.id),
+            user_id: sf.user_id,
+            type: sf.type || 'income',
+            payment_date: String(sf.payment_date),
+            amount: Number(sf.amount),
+            description: String(sf.description || ''),
+            payment_method: String(sf.payment_method || ''),
+            category: String(sf.category || ''),
+            updated_at: reviveDate(sf.updated_at),
+        })),
     };
-};
-
-// --- Image Compression Utility ---
-const compressImage = async (file: File): Promise<File> => {
-    // Only compress images
-    if (!file.type.startsWith('image/')) return file;
-    // Don't compress small images (< 300KB)
-    if (file.size < 300 * 1024) return file;
-
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
-            img.src = e.target?.result as string;
-        };
-        reader.onerror = (e) => reject(e);
-
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-
-            // Max dimension (e.g., 1920px is enough for documents)
-            const MAX_WIDTH = 1920;
-            const MAX_HEIGHT = 1920;
-
-            if (width > height) {
-                if (width > MAX_WIDTH) {
-                    height *= MAX_WIDTH / width;
-                    width = MAX_WIDTH;
-                }
-            } else {
-                if (height > MAX_HEIGHT) {
-                    width *= MAX_HEIGHT / height;
-                    height = MAX_HEIGHT;
-                }
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                resolve(file); // Fallback
-                return;
-            }
-            
-            ctx.drawImage(img, 0, 0, width, height);
-
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    // Create new file with compressed data
-                    const compressedFile = new File([blob], file.name, {
-                        type: 'image/jpeg', // Standardize to JPEG for better compression
-                        lastModified: Date.now(),
-                    });
-                    console.log(`Compressed: ${(file.size/1024).toFixed(0)}KB -> ${(compressedFile.size/1024).toFixed(0)}KB`);
-                    resolve(compressedFile);
-                } else {
-                    resolve(file); // Fallback
-                }
-            }, 'image/jpeg', 0.7); // 0.7 Quality is good for documents
-        };
-        
-        reader.readAsDataURL(file);
-    });
-};
-
-// Helper function to robustly extract error messages
-const extractErrorMessage = (e: any): string => {
-    if (!e) return 'Unknown Error';
-    if (typeof e === 'string') return e;
-    if (e instanceof Error) return e.message;
-    
-    if (typeof e === 'object') {
-        // Prioritize explicit message properties
-        if (e.message) return e.message;
-        if (e.error_description) return e.error_description;
-        if (typeof e.error === 'string') return e.error; 
-        
-        // Check for status codes
-        if (e.statusCode === 404 || e.status === 404) return 'File not found on server (404)';
-        if (e.statusCode === '404') return 'File not found on server (404)';
-        
-        // Fallback: Try to stringify, but prevent "{}"
-        try {
-            const json = JSON.stringify(e);
-            if (json !== '{}') return json;
-        } catch {}
-        
-        return 'Unknown Error Object (Check Console)';
-    }
-    return String(e);
 };
 
 export const useSupabaseData = (user: User | null, isAuthLoading: boolean) => {
-    const [data, setData] = React.useState<AppData>(getInitialData);
-    const [deletedIds, setDeletedIds] = React.useState<DeletedIds>(getInitialDeletedIds);
-    const [isDirty, setDirty] = React.useState(false);
-    const [syncStatus, setSyncStatus] = React.useState<SyncStatus>('loading');
-    const [lastSyncError, setLastSyncError] = React.useState<string | null>(null);
+    // --- State Declarations ---
+    const [clients, setClients] = React.useState<Client[]>([]);
+    const [adminTasks, setAdminTasks] = React.useState<AdminTask[]>([]);
+    const [appointments, setAppointments] = React.useState<Appointment[]>([]);
+    const [accountingEntries, setAccountingEntries] = React.useState<AccountingEntry[]>([]);
+    const [invoices, setInvoices] = React.useState<Invoice[]>([]);
+    const [assistants, setAssistants] = React.useState<string[]>([...defaultAssistants]);
+    const [documents, setDocuments] = React.useState<CaseDocument[]>([]);
+    const [profiles, setProfiles] = React.useState<Profile[]>([]);
+    const [siteFinances, setSiteFinances] = React.useState<SiteFinancialEntry[]>([]);
+    
+    // --- Sync & Metadata State ---
     const [isDataLoading, setIsDataLoading] = React.useState(true);
-    const [triggeredAlerts, setTriggeredAlerts] = React.useState<Appointment[]>([]);
+    const [syncStatus, setSyncStatus] = React.useState<SyncStatus>('uninitialized');
+    const [lastSyncError, setLastSyncError] = React.useState<string | null>(null);
+    const [deletedIds, setDeletedIds] = React.useState<DeletedIds>(getInitialDeletedIds());
+    const [isDirty, setIsDirty] = React.useState(false);
+    
+    // --- Settings State ---
+    const [isAutoSyncEnabled, setAutoSyncEnabled] = React.useState(defaultSettings.isAutoSyncEnabled);
+    const [isAutoBackupEnabled, setAutoBackupEnabled] = React.useState(defaultSettings.isAutoBackupEnabled);
+    const [adminTasksLayout, setAdminTasksLayout] = React.useState<'horizontal' | 'vertical'>(defaultSettings.adminTasksLayout);
+    const [locationOrder, setLocationOrder] = React.useState<string[]>([]);
+
+    // --- UI State managed here for global access ---
     const [showUnpostponedSessionsModal, setShowUnpostponedSessionsModal] = React.useState(false);
+    const [triggeredAlerts, setTriggeredAlerts] = React.useState<Appointment[]>([]);
     const [realtimeAlerts, setRealtimeAlerts] = React.useState<RealtimeAlert[]>([]);
     const [userApprovalAlerts, setUserApprovalAlerts] = React.useState<RealtimeAlert[]>([]);
-    const [userSettings, setUserSettings] = React.useState<any>({ isAutoSyncEnabled: true, isAutoBackupEnabled: true, adminTasksLayout: 'horizontal', locationOrder: [] });
+
+    const supabase = getSupabaseClient();
     const isOnline = useOnlineStatus();
-    
-    const userRef = React.useRef(user);
-    userRef.current = user;
+    const channelRef = React.useRef<RealtimeChannel | null>(null);
 
-    // --- EFFECTIVE USER ID LOGIC (CACHE FIRST) ---
-    const [effectiveUserId, setEffectiveUserId] = React.useState<string | null>(() => {
+    // Derived States
+    const effectiveUserId = React.useMemo(() => {
         if (!user) return null;
-        try {
-            if (typeof window !== 'undefined') {
-                return localStorage.getItem(`lawyer_app_owner_${user.id}`) || user.id;
-            }
-        } catch (e) {
-            console.warn("LocalStorage access failed (possibly disabled)", e);
-        }
-        return user.id;
-    });
+        const currentUserProfile = profiles.find(p => p.id === user.id);
+        return currentUserProfile?.lawyer_id || user.id;
+    }, [user, profiles]);
 
-    // Background: Determine effective ID from loaded profile data
-    React.useEffect(() => {
-        if (!user) return;
-        const currentUserProfile = data.profiles.find(p => p.id === user.id);
-        
-        let newOwnerId = user.id;
-        
-        if (currentUserProfile) {
-            if (currentUserProfile.lawyer_id) {
-                newOwnerId = currentUserProfile.lawyer_id;
-            }
-        }
+    const effectiveUser = React.useMemo(() => {
+        return user ? { ...user, id: effectiveUserId || user.id } : null;
+    }, [user, effectiveUserId]);
 
-        if (newOwnerId !== effectiveUserId) {
-            console.log("Detected new data owner ID, updating context...", newOwnerId);
-            setEffectiveUserId(newOwnerId);
-            try {
-                localStorage.setItem(`lawyer_app_owner_${user.id}`, newOwnerId);
-            } catch(e) {
-                console.warn("Failed to cache owner ID", e);
-            }
-        }
-    }, [user, data.profiles, effectiveUserId]);
-
-    // Current user's permissions logic...
-    const currentUserPermissions: Permissions = React.useMemo(() => {
+    const permissions = React.useMemo(() => {
         if (!user) return defaultPermissions;
-        const currentUserProfile = data.profiles.find(p => p.id === user.id);
-        if (currentUserProfile && currentUserProfile.lawyer_id) {
-            return { ...defaultPermissions, ...currentUserProfile.permissions };
+        const profile = profiles.find(p => p.id === user.id);
+        if (profile?.role === 'admin' || !profile?.lawyer_id) {
+             // Admin or Main Lawyer gets all permissions
+             return {
+                 can_view_agenda: true,
+                 can_view_clients: true, can_add_client: true, can_edit_client: true, can_delete_client: true,
+                 can_view_cases: true, can_add_case: true, can_edit_case: true, can_delete_case: true,
+                 can_view_sessions: true, can_add_session: true, can_edit_session: true, can_delete_session: true, can_postpone_session: true, can_decide_session: true,
+                 can_view_documents: true, can_add_document: true, can_delete_document: true,
+                 can_view_finance: true, can_add_financial_entry: true, can_delete_financial_entry: true, can_manage_invoices: true,
+                 can_view_admin_tasks: true, can_add_admin_task: true, can_edit_admin_task: true, can_delete_admin_task: true,
+                 can_view_reports: true
+             };
         }
-        return {
-            can_view_agenda: true,
-            can_view_clients: true,
-            can_add_client: true,
-            can_edit_client: true,
-            can_delete_client: true,
-            can_view_cases: true,
-            can_add_case: true,
-            can_edit_case: true,
-            can_delete_case: true,
-            can_view_sessions: true,
-            can_add_session: true,
-            can_edit_session: true,
-            can_delete_session: true,
-            can_postpone_session: true,
-            can_decide_session: true,
-            can_view_documents: true,
-            can_add_document: true,
-            can_delete_document: true,
-            can_view_finance: true,
-            can_add_financial_entry: true,
-            can_delete_financial_entry: true,
-            can_manage_invoices: true,
-            can_view_admin_tasks: true,
-            can_add_admin_task: true,
-            can_edit_admin_task: true,
-            can_delete_admin_task: true,
-            can_view_reports: true,
-        };
-    }, [user, data.profiles]);
+        return { ...defaultPermissions, ...(profile.permissions || {}) };
+    }, [user, profiles]);
 
-    // Update Data function
-    const updateData = React.useCallback((updater: React.SetStateAction<AppData>) => {
-        if (!userRef.current || !effectiveUserId) return;
-        
-        setData(currentData => {
-            const newData = typeof updater === 'function' ? (updater as (prevState: AppData) => AppData)(currentData) : updater;
-            getDb().then(db => {
-                db.put(DATA_STORE_NAME, newData, effectiveUserId);
-            }).catch(err => console.error("DB Write Error (Safe to ignore)", err));
-            setDirty(true);
-            return newData;
+    const allSessions = React.useMemo(() => clients.flatMap(c => c.cases.flatMap(cs => cs.stages.flatMap(st => st.sessions))), [clients]);
+    
+    const unpostponedSessions = React.useMemo(() => {
+        if (!user) return [];
+        return allSessions.filter(session => {
+            const isAssignedToUser = permissions.can_view_sessions && (session.assignee === user.user_metadata?.full_name || !session.assignee || session.assignee === 'بدون تخصيص');
+            return isBeforeToday(session.date) && !session.isPostponed && !session.stageDecisionDate && isAssignedToUser;
         });
-    }, [effectiveUserId]); 
+    }, [allSessions, user, permissions]);
 
-    const setFullData = React.useCallback(async (newData: any) => {
-        const validated = validateAndFixData(newData, userRef.current);
-        updateData(validated);
-    }, [updateData]);
-
-    // Settings Load
-    React.useEffect(() => {
-        const settingsKey = `userSettings_${user?.id}`;
-        try {
-            const storedSettings = localStorage.getItem(settingsKey);
-            if (storedSettings) {
-                setUserSettings(JSON.parse(storedSettings));
-            }
-        } catch (e) {
-            console.error("Failed to load user settings", e);
+    // --- Data Persistence Helpers ---
+    const loadSettings = async () => {
+        const db = await getDb();
+        const settings = await db.get(DATA_STORE_NAME, 'userSettings');
+        if (settings) {
+            setAutoSyncEnabled(settings.isAutoSyncEnabled ?? defaultSettings.isAutoSyncEnabled);
+            setAutoBackupEnabled(settings.isAutoBackupEnabled ?? defaultSettings.isAutoBackupEnabled);
+            setAdminTasksLayout(settings.adminTasksLayout ?? defaultSettings.adminTasksLayout);
+            setLocationOrder(settings.locationOrder ?? []);
         }
-    }, [user?.id]);
-
-    const updateSettings = (updater: (prev: any) => any) => {
-        const newSettings = updater(userSettings);
-        setUserSettings(newSettings);
-        try {
-            const settingsKey = `userSettings_${user?.id}`;
-            localStorage.setItem(settingsKey, JSON.stringify(newSettings));
-        } catch (e) { console.warn("Failed to save settings", e); }
     };
 
-    // --- MAIN DATA LOADING EFFECT (INSTANT LOAD) ---
-    React.useEffect(() => {
-        if (!user || isAuthLoading) {
-            if (!isAuthLoading) setIsDataLoading(false);
-            return;
+    const saveSettings = async () => {
+        const db = await getDb();
+        await db.put(DATA_STORE_NAME, { isAutoSyncEnabled, isAutoBackupEnabled, adminTasksLayout, locationOrder }, 'userSettings');
+    };
+
+    const saveLocalData = React.useCallback(async (data: AppData) => {
+        const db = await getDb();
+        await db.put(DATA_STORE_NAME, data, APP_DATA_KEY);
+        await db.put(DATA_STORE_NAME, deletedIds, 'deletedIds');
+        setIsDirty(true);
+    }, [deletedIds]);
+
+    const loadLocalData = async () => {
+        const db = await getDb();
+        const storedData = await db.get(DATA_STORE_NAME, APP_DATA_KEY);
+        const storedDeletedIds = await db.get(DATA_STORE_NAME, 'deletedIds');
+        const storedDocsMetadata = await db.getAll(DOCS_METADATA_STORE_NAME);
+
+        if (storedData) {
+            const validated = validateAndFixData({ ...storedData, documents: storedDocsMetadata }, user);
+            setClients(validated.clients);
+            setAdminTasks(validated.adminTasks);
+            setAppointments(validated.appointments);
+            setAccountingEntries(validated.accountingEntries);
+            setInvoices(validated.invoices);
+            setAssistants(validated.assistants);
+            setDocuments(validated.documents);
+            setProfiles(validated.profiles);
+            setSiteFinances(validated.siteFinances);
         }
+        if (storedDeletedIds) setDeletedIds(storedDeletedIds);
+    };
 
-        if (data.clients.length === 0 && data.profiles.length === 0) setIsDataLoading(true);
-
-        let cancelled = false;
-
-        const loadData = async () => {
-            // Use cached effectiveUserId for instant load
-            const ownerId = effectiveUserId || user.id;
-
-            try {
-                const db = await getDb();
-                const [storedData, storedDeletedIds, localDocsMetadata] = await Promise.all([
-                    db.get(DATA_STORE_NAME, ownerId),
-                    db.get(DATA_STORE_NAME, `deletedIds_${ownerId}`),
-                    db.getAll(DOCS_METADATA_STORE_NAME)
-                ]);
-                
-                if (cancelled) return;
-
-                // Process and Render Data IMMEDIATELY
-                const validatedData = validateAndFixData(storedData, user);
-                const localDocsMetadataMap = new Map((localDocsMetadata as any[]).map((meta: any) => [meta.id, meta]));
-                const finalDocs = validatedData.documents.map(doc => {
-                    const localMeta: any = localDocsMetadataMap.get(doc.id);
-                    return { ...doc, localState: localMeta?.localState || doc.localState || 'pending_download' };
-                }).filter(doc => !!doc) as CaseDocument[];
-                
-                const finalData = { ...validatedData, documents: finalDocs };
-
-                setData(finalData);
-                setDeletedIds(storedDeletedIds || getInitialDeletedIds());
-                
-                // HIDE LOADER IMMEDIATELY
-                setIsDataLoading(false); 
-
-                if (!navigator.onLine) {
-                    setSyncStatus('synced');
-                }
-
-            } catch (error) {
-                console.error('Failed to load local data:', error);
-                setSyncStatus('error');
-                setLastSyncError('فشل تحميل البيانات المحلية.');
-                setIsDataLoading(false);
-            }
-        };
-
-        loadData();
-        return () => { cancelled = true; };
-    }, [user, isAuthLoading]); 
-    
-    // Reload data if effectiveUserId changes
-    React.useEffect(() => {
-        if (!user || isAuthLoading || isDataLoading) return;
-        const reloadForNewOwner = async () => {
-             const ownerId = effectiveUserId || user.id;
-             console.log("Reloading data for new owner:", ownerId);
-             try {
-                 const db = await getDb();
-                 const storedData = await db.get(DATA_STORE_NAME, ownerId);
-                 const validatedData = validateAndFixData(storedData, user);
-                 setData(prev => ({...validatedData, documents: prev.documents})); 
-             } catch (e) {
-                 console.error("Failed to reload for new owner", e);
-             }
-        };
-        reloadForNewOwner();
-    }, [effectiveUserId]);
-
-
-    // Sync Status Callback
-    const handleSyncStatusChange = React.useCallback((status: SyncStatus, error: string | null) => {
-        setSyncStatus(status);
-        setLastSyncError(error);
-    }, []);
-
-    const handleDataSynced = React.useCallback(async (mergedData: AppData) => {
-        if (!effectiveUserId) return;
+    // --- Cleanup & Retention Policy ---
+    const cleanupCloudStorage = React.useCallback(async () => {
+        if (!isOnline || !supabase) return;
+        
         try {
-            const validatedMergedData = validateAndFixData(mergedData, userRef.current);
             const db = await getDb();
-            const localDocsMetadata = await db.getAll(DOCS_METADATA_STORE_NAME);
-            
-            // 1. Process merged documents from Sync
-            const syncedDocsIds = new Set(validatedMergedData.documents.map(d => d.id));
-            
-            let finalDocs = safeArray(validatedMergedData.documents, (doc: any) => {
-                if (!doc || typeof doc !== 'object' || !doc.id) return undefined;
-                const localMeta = (localDocsMetadata as any[]).find((meta: any) => meta.id === doc.id);
-                // Keep local state if available, otherwise default to pending_download
-                const mergedDoc = {
-                    ...doc,
-                    localState: localMeta?.localState || doc.localState || 'pending_download'
-                };
-                return validateDocuments(mergedDoc, userRef.current?.id || '');
+            const allDocs = await db.getAll(DOCS_METADATA_STORE_NAME) as CaseDocument[];
+            const now = Date.now();
+            const ONE_DAY = 24 * 60 * 60 * 1000;
+
+            const expiredDocs = allDocs.filter(doc => {
+                const isOld = (now - new Date(doc.addedAt).getTime()) > ONE_DAY;
+                // Only cleanup if we have it locally (synced) and it's not already marked archived/expired
+                return isOld && doc.localState === 'synced';
             });
 
-            // 2. SAFETY CHECK: Re-inject local-only documents that might have been dropped by Sync
-            // Use a Map for faster lookup and merging
-            const finalDocsMap = new Map(finalDocs.map(d => [d.id, d]));
+            for (const doc of expiredDocs) {
+                // We attempt to delete from cloud.
+                // Even if it fails (already deleted by someone else), we mark as archived locally because WE have the file.
+                // Note: The file stays in Supabase Database metadata (case_documents table), but is removed from Storage Bucket.
+                const { error } = await supabase.storage.from('documents').remove([doc.storagePath]);
+                
+                if (!error || (error as any).statusCode === '404') {
+                    const updatedDoc: CaseDocument = { ...doc, localState: 'archived' };
+                    await db.put(DOCS_METADATA_STORE_NAME, updatedDoc);
+                    setDocuments(prev => prev.map(d => d.id === doc.id ? updatedDoc : d));
+                }
+            }
+        } catch (error) {
+            console.error("Cleanup failed:", error);
+        }
+    }, [isOnline, supabase]);
 
-            (localDocsMetadata as any[]).forEach((localMeta: any) => {
-                // If it's pending upload or error (failed upload), and not in the synced list
-                if ((localMeta.localState === 'pending_upload' || localMeta.localState === 'error') && !syncedDocsIds.has(localMeta.id)) {
-                    if (!finalDocsMap.has(localMeta.id)) {
-                        const restoredDoc = validateDocuments(localMeta, userRef.current?.id || '');
-                        if (restoredDoc) {
-                            console.log(`Restoring pending document: ${restoredDoc.name}`);
-                            finalDocsMap.set(localMeta.id, restoredDoc);
+    // --- Realtime Subscriptions ---
+    React.useEffect(() => {
+        if (!supabase || !isOnline || !user) return;
+
+        const setupRealtime = () => {
+            if (channelRef.current) return;
+
+            const channel = supabase.channel('db-changes')
+                .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+                    // Filter events relevant to the current user (own data or team data)
+                    const newData = payload.new as any;
+                    const oldData = payload.old as any;
+                    
+                    const isRelevant = 
+                        (newData && (newData.user_id === effectiveUserId || newData.lawyer_id === effectiveUserId || (profiles.find(p=>p.id===user.id)?.role === 'admin'))) ||
+                        (oldData && (oldData.user_id === effectiveUserId || oldData.lawyer_id === effectiveUserId));
+
+                    if (isRelevant) {
+                        // Special handling for new user approvals for Admin
+                        if (payload.table === 'profiles' && payload.eventType === 'INSERT') {
+                            const newProfile = payload.new as Profile;
+                            if (!newProfile.is_approved && !newProfile.lawyer_id) {
+                                addRealtimeAlert(`مستخدم جديد بانتظار الموافقة: ${newProfile.full_name}`, 'userApproval');
+                            }
+                        }
+                        
+                        // General Sync Alert
+                        if (isAutoSyncEnabled) {
+                            fetchAndRefresh();
+                        } else {
+                            addRealtimeAlert('هناك تحديثات جديدة من السحابة. اضغط للمزامنة.', 'sync');
                         }
                     }
-                }
-            });
-            
-            finalDocs = Array.from(finalDocsMap.values());
+                })
+                .subscribe();
 
-            const finalData = { ...validatedMergedData, documents: finalDocs };
-
-            await db.put(DATA_STORE_NAME, finalData, effectiveUserId);
-            setData(finalData);
-            setDirty(false);
-        } catch (e) {
-            console.error("Critical error in handleDataSynced:", e);
-            handleSyncStatusChange('error', 'فشل تحديث البيانات المحلية بعد المزامنة.');
-        }
-    }, [userRef, effectiveUserId, handleSyncStatusChange]);
-    
-    const handleDeletionsSynced = React.useCallback(async (syncedDeletions: Partial<DeletedIds>) => {
-        if (!effectiveUserId) return;
-        const newDeletedIds = { ...deletedIds };
-        let changed = false;
-        for (const key of Object.keys(syncedDeletions) as Array<keyof DeletedIds>) {
-            const synced = new Set((syncedDeletions[key] || []) as any[]);
-            if (synced.size > 0) {
-                newDeletedIds[key] = newDeletedIds[key].filter(id => !synced.has(id as any));
-                changed = true;
-            }
-        }
-        if (changed) {
-            setDeletedIds(newDeletedIds);
-            const db = await getDb();
-            await db.put(DATA_STORE_NAME, newDeletedIds, `deletedIds_${effectiveUserId}`);
-        }
-    }, [deletedIds, effectiveUserId]);
-
-    // Use Sync Hook
-    const { manualSync, fetchAndRefresh } = useSync({
-        user: userRef.current ? { ...userRef.current, id: effectiveUserId || userRef.current.id } as User : null,
-        localData: data, 
-        deletedIds,
-        onDataSynced: handleDataSynced,
-        onDeletionsSynced: handleDeletionsSynced,
-        onSyncStatusChange: handleSyncStatusChange,
-        isOnline, isAuthLoading, syncStatus
-    });
-
-    // Background Sync Trigger
-    React.useEffect(() => {
-        if (!isDataLoading && isOnline && user) {
-            const timer = setTimeout(() => {
-                fetchAndRefresh();
-            }, 1000);
-            return () => clearTimeout(timer);
-        }
-    }, [isDataLoading, isOnline, user]); 
-
-    // Supabase Realtime Subscription
-    React.useEffect(() => {
-        if (!isOnline || !user) return;
-        const supabase = getSupabaseClient();
-        if (!supabase) return;
-
-        const channel = supabase.channel('db-changes')
-            .on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
-                if (payload.table === 'sync_deletions') return; 
-                const record = payload.new as any || payload.old as any;
-                const relevantId = effectiveUserId || user.id;
-                
-                if (record && (record.user_id === relevantId || record.lawyer_id === relevantId || record.id === relevantId)) {
-                    console.log('Realtime change detected, refreshing...');
-                    fetchAndRefresh();
-                }
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, [isOnline, user, effectiveUserId, fetchAndRefresh]);
-
-    // Auto Sync
-    React.useEffect(() => {
-        if (isOnline && isDirty && userSettings.isAutoSyncEnabled && syncStatus !== 'syncing') {
-            const handler = setTimeout(() => { manualSync(); }, 3000);
-            return () => clearTimeout(handler);
-        }
-    }, [isOnline, isDirty, userSettings.isAutoSyncEnabled, syncStatus, manualSync]);
-
-    const addRealtimeAlert = React.useCallback((message: string, type: 'sync' | 'userApproval' = 'sync') => {
-        setRealtimeAlerts(prev => [...prev, { id: Date.now(), message, type }]);
-    }, []);
-
-    const createDeleteFunction = <T extends keyof DeletedIds>(entity: T) => async (id: DeletedIds[T][number]) => {
-        if (!effectiveUserId) return;
-        const db = await getDb();
-        const newDeletedIds = { ...deletedIds, [entity]: [...deletedIds[entity], id] };
-        setDeletedIds(newDeletedIds);
-        await db.put(DATA_STORE_NAME, newDeletedIds, `deletedIds_${effectiveUserId}`);
-        setDirty(true);
-    };
-
-    // --- AUTO-UPLOAD BACKGROUND SERVICE ---
-    // Automatically upload files that are pending upload
-    React.useEffect(() => {
-        if (!isOnline || !user) return;
-
-        const uploadNext = async () => {
-            // Find a document that needs uploading
-            // We verify it has a valid ID and storagePath to be safe
-            const pendingDoc = data.documents.find(d => d.localState === 'pending_upload' && d.storagePath);
-            
-            if (!pendingDoc) return;
-
-            console.log(`Starting background upload for: ${pendingDoc.name}`);
-            const db = await getDb();
-            const file = await db.get(DOCS_FILES_STORE_NAME, pendingDoc.id);
-            
-            if (!file) {
-                console.warn(`File content missing locally for ${pendingDoc.name}. Marking as error.`);
-                const errorDoc = { ...pendingDoc, localState: 'error' };
-                await db.put(DOCS_METADATA_STORE_NAME, errorDoc, pendingDoc.id);
-                updateData(p => ({...p, documents: p.documents.map(d => d.id === pendingDoc.id ? errorDoc as CaseDocument : d)}));
-                return;
-            }
-
-            const supabase = getSupabaseClient();
-            if (!supabase) return;
-
-            try {
-                // Perform Upload
-                const { error: uploadError } = await supabase.storage
-                    .from('documents')
-                    .upload(pendingDoc.storagePath, file, {
-                        cacheControl: '3600',
-                        upsert: true
-                    });
-
-                if (uploadError) throw uploadError;
-
-                console.log(`Upload successful: ${pendingDoc.name}`);
-                
-                // Update state to Synced
-                const syncedDoc = { ...pendingDoc, localState: 'synced' };
-                await db.put(DOCS_METADATA_STORE_NAME, syncedDoc, pendingDoc.id);
-                updateData(p => ({...p, documents: p.documents.map(d => d.id === pendingDoc.id ? syncedDoc as CaseDocument : d)}));
-
-            } catch (e: any) {
-                let errorMsg = e.message || 'Upload failed';
-                console.error(`Upload failed for ${pendingDoc.name}:`, errorMsg);
-                
-                // Mark as error to stop the loop for this specific file
-                const errorDoc = { ...pendingDoc, localState: 'error' };
-                await db.put(DOCS_METADATA_STORE_NAME, errorDoc, pendingDoc.id);
-                updateData(p => ({...p, documents: p.documents.map(d => d.id === pendingDoc.id ? errorDoc as CaseDocument : d)}));
-            }
+            channelRef.current = channel;
         };
 
-        // Check for uploads every 2 seconds to avoid flooding
-        const timer = setTimeout(uploadNext, 2000);
-        return () => clearTimeout(timer);
-    }, [data.documents, isOnline, user, updateData]);
+        setupRealtime();
 
-    // Define getDocumentFile BEFORE it is used in the auto-download effect to prevent hoisting issues
+        return () => {
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
+        };
+    }, [supabase, isOnline, user, effectiveUserId, isAutoSyncEnabled, profiles]);
+
+    // --- Initial Load Effect ---
+    React.useEffect(() => {
+        let isMounted = true;
+        
+        const init = async () => {
+            if (isAuthLoading) return;
+            
+            await loadSettings();
+            await loadLocalData();
+            
+            // Only fetch from network if no data locally or we want fresh data
+            if (isOnline) {
+                try {
+                    await manualSync();
+                } catch (e) {
+                    console.warn("Initial sync failed, using local data", e);
+                }
+            }
+            
+            if (isMounted) setIsDataLoading(false);
+        };
+
+        init();
+        
+        return () => { isMounted = false; };
+    }, [user, isAuthLoading]);
+
+    // --- Auto-Save Effect ---
+    React.useEffect(() => {
+        if (!isDataLoading) {
+            const dataToSave: AppData = { clients, adminTasks, appointments, accountingEntries, invoices, assistants, documents, profiles, siteFinances };
+            saveLocalData(dataToSave);
+        }
+    }, [clients, adminTasks, appointments, accountingEntries, invoices, assistants, documents, profiles, siteFinances, isDataLoading, saveLocalData]);
+
+    // --- Settings Auto-Save Effect ---
+    React.useEffect(() => {
+        saveSettings();
+    }, [isAutoSyncEnabled, isAutoBackupEnabled, adminTasksLayout, locationOrder]);
+
+    // --- Periodic Cleanup Effect ---
+    React.useEffect(() => {
+        const timer = setInterval(() => {
+            cleanupCloudStorage();
+        }, 60 * 60 * 1000); // Check every hour
+        
+        if (isOnline && !isDataLoading) {
+            cleanupCloudStorage();
+        }
+        
+        return () => clearInterval(timer);
+    }, [isOnline, cleanupCloudStorage, isDataLoading]);
+
+    // --- Alerts Handlers ---
+    const addRealtimeAlert = React.useCallback((message: string, type: 'sync' | 'userApproval' = 'sync') => {
+        const newAlert = { id: Date.now(), message, type };
+        if (type === 'userApproval') {
+            setUserApprovalAlerts(prev => [...prev, newAlert]);
+        } else {
+            setRealtimeAlerts(prev => [...prev, newAlert]);
+        }
+    }, []);
+
+    const dismissRealtimeAlert = (id: number) => setRealtimeAlerts(prev => prev.filter(a => a.id !== id));
+    const dismissUserApprovalAlert = (id: number) => setUserApprovalAlerts(prev => prev.filter(a => a.id !== id));
+    const dismissAlert = (id: string) => setTriggeredAlerts(prev => prev.filter(apt => apt.id !== id));
+
+    // --- Document Helpers ---
+    const updateDocumentState = async (docId: string, newState: CaseDocument['localState']) => {
+        setDocuments(prev => prev.map(d => d.id === docId ? { ...d, localState: newState } : d));
+        const db = await getDb();
+        const doc = await db.get(DOCS_METADATA_STORE_NAME, docId);
+        if (doc) await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: newState });
+    };
+
     const getDocumentFile = React.useCallback(async (docId: string): Promise<File | null> => {
         const db = await getDb();
-        const supabase = getSupabaseClient();
-        const doc = data.documents.find(d => d.id === docId);
-        if (!doc) return null;
+        const doc = await db.get(DOCS_METADATA_STORE_NAME, docId) as CaseDocument;
         
-        const localFile = await db.get(DOCS_FILES_STORE_NAME, docId);
-        if (localFile) return localFile;
-        
-        if (!isOnline || !supabase) return null;
-        
-        // Safety Check: Missing storage path
-        if (!doc.storagePath) {
-             console.error(`Download failed for ${doc.name}: Storage path is missing in metadata.`);
-             await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
-             updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
-             return null;
+        // 1. Try Local
+        const fileBlob = await db.get(DOCS_FILES_STORE_NAME, docId);
+        if (fileBlob && doc) {
+            if (doc.localState !== 'synced' && doc.localState !== 'archived') {
+                updateDocumentState(docId, 'synced');
+            }
+            return new File([fileBlob], doc.name, { type: doc.type });
         }
 
-        if (doc.localState === 'pending_download' || doc.localState === 'error') {
+        // 2. Try Remote
+        if (doc && isOnline && supabase) {
             try {
-                updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'downloading' } : d)}));
+                updateDocumentState(docId, 'downloading');
+                const { data, error } = await supabase.storage.from('documents').download(doc.storagePath);
                 
-                const { data: blob, error } = await supabase.storage.from('documents').download(doc.storagePath);
-                
-                if (error) throw error;
-                if (!blob) throw new Error("Empty blob received");
-                
-                const downloadedFile = new File([blob], doc.name, { type: doc.type });
-                
-                await db.put(DOCS_FILES_STORE_NAME, downloadedFile, doc.id);
-                await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'synced' }, doc.id);
-                
-                updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'synced'} : d)}));
-                
-                return downloadedFile;
-            } catch (e: any) {
-                const errorMsg = extractErrorMessage(e);
+                if (error) {
+                    // Handle "Object not found" as expired
+                    const errorStr = JSON.stringify(error);
+                    if (errorStr.includes('Object not found') || (error as any).statusCode === '404' || (error as any).status === 404) {
+                        await updateDocumentState(docId, 'expired');
+                        return null;
+                    }
+                    throw error;
+                }
 
-                // Suppress console spam for common network issues
-                const isNetworkError = errorMsg.toLowerCase().includes('failed to fetch') || errorMsg.toLowerCase().includes('network');
-                const isNotFound = errorMsg.toLowerCase().includes('not found') || errorMsg.includes('404');
-
-                if (isNetworkError) {
-                    console.debug(`Download paused for ${doc.name}: Network unavailable.`);
-                } else if (isNotFound) {
-                    console.warn(`Download failed for ${doc.name}: File not found on server.`);
-                } else {
-                    console.error(`Download failed for ${doc.name}: ${errorMsg}`);
+                if (data) {
+                    await db.put(DOCS_FILES_STORE_NAME, data, docId);
+                    await updateDocumentState(docId, 'synced');
+                    return new File([data], doc.name, { type: doc.type });
+                }
+            } catch (err: any) {
+                console.error(`Download failed for ${doc.name}:`, err);
+                
+                // Handle empty error objects often returned by Supabase for 404s/Network issues
+                if (err && Object.keys(err).length === 0) {
+                     // Assume expired if we are online but get a weird empty error
+                     if (isOnline) {
+                         await updateDocumentState(docId, 'expired');
+                         return null;
+                     }
                 }
                 
-                // Persist error state
-                await db.put(DOCS_METADATA_STORE_NAME, { ...doc, localState: 'error' }, doc.id);
-                updateData(p => ({...p, documents: p.documents.map(d => d.id === docId ? {...d, localState: 'error'} : d)}));
+                await updateDocumentState(docId, 'error');
             }
+        } else if (doc && !isOnline) {
+             // Offline and not in IDB
+             await updateDocumentState(docId, 'pending_download');
         }
+
         return null;
-    }, [data.documents, isOnline, updateData]);
+    }, [isOnline, supabase]);
 
+    const addDocuments = async (caseId: string, files: FileList) => {
+        if (!user) return;
+        const newDocs: CaseDocument[] = [];
+        const db = await getDb();
 
-    // --- AUTO-DOWNLOAD BACKGROUND SERVICE (WhatsApp Style) ---
-    React.useEffect(() => {
-        if (!isOnline || !user || isDataLoading) return;
-
-        // Prevent parallel downloads
-        const isDownloading = data.documents.some(d => d.localState === 'downloading');
-        if (isDownloading) return;
-
-        // Find the first document that needs downloading
-        const pendingDoc = data.documents.find(d => d.localState === 'pending_download');
-
-        if (pendingDoc) {
-            console.log(`Auto-downloading document: ${pendingDoc.name}`);
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const docId = `doc-${Date.now()}-${i}`;
+            const storagePath = `${effectiveUserId}/${caseId}/${docId}-${file.name}`;
             
-            const timer = setTimeout(() => {
-                getDocumentFile(pendingDoc.id).catch(() => {
-                    // Errors are handled inside getDocumentFile
-                });
-            }, 1500); // Slightly increased delay
+            const newDoc: CaseDocument = {
+                id: docId,
+                caseId,
+                userId: user.id,
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                addedAt: new Date(),
+                storagePath,
+                localState: 'pending_upload', // Start as pending
+            };
 
-            return () => clearTimeout(timer);
-        }
-    }, [data.documents, isOnline, user, isDataLoading, getDocumentFile]); 
-
-    // ... (rest of the hook matches previous structure with image compression in addDocuments)
-    return {
-        ...data,
-        setClients: (updater) => updateData(prev => ({ ...prev, clients: typeof updater === 'function' ? (updater as (p: Client[]) => Client[])(prev.clients) : updater })),
-        setAdminTasks: (updater) => updateData(prev => ({ ...prev, adminTasks: typeof updater === 'function' ? (updater as (p: AdminTask[]) => AdminTask[])(prev.adminTasks) : updater })),
-        setAppointments: (updater) => updateData(prev => ({ ...prev, appointments: typeof updater === 'function' ? (updater as (p: Appointment[]) => Appointment[])(prev.appointments) : updater })),
-        setAccountingEntries: (updater) => updateData(prev => ({ ...prev, accountingEntries: typeof updater === 'function' ? (updater as (p: AccountingEntry[]) => AccountingEntry[])(prev.accountingEntries) : updater })),
-        setInvoices: (updater) => updateData(prev => ({ ...prev, invoices: typeof updater === 'function' ? (updater as (p: Invoice[]) => Invoice[])(prev.invoices) : updater })),
-        setAssistants: (updater) => updateData(prev => ({ ...prev, assistants: typeof updater === 'function' ? (updater as (p: string[]) => string[])(prev.assistants) : updater })),
-        setDocuments: (updater) => updateData(prev => ({ ...prev, documents: typeof updater === 'function' ? (updater as (p: CaseDocument[]) => CaseDocument[])(prev.documents) : updater })),
-        setProfiles: (updater) => updateData(prev => ({ ...prev, profiles: typeof updater === 'function' ? (updater as (p: Profile[]) => Profile[])(prev.profiles) : updater })),
-        setSiteFinances: (updater) => updateData(prev => ({ ...prev, siteFinances: typeof updater === 'function' ? (updater as (p: SiteFinancialEntry[]) => SiteFinancialEntry[])(prev.siteFinances) : updater })),
-        setFullData,
-        allSessions: React.useMemo(() => data.clients.flatMap(c => c.cases.flatMap(cs => cs.stages.flatMap(st => st.sessions.map(s => ({...s, stageId: st.id, stageDecisionDate: st.decisionDate}))))), [data.clients]),
-        unpostponedSessions: React.useMemo(() => {
-            return data.clients.flatMap(c => c.cases.flatMap(cs => cs.stages.flatMap(st => st.sessions.filter(s => !s.isPostponed && isBeforeToday(s.date) && !st.decisionDate).map(s => ({...s, stageId: st.id, stageDecisionDate: st.decisionDate})))));
-        }, [data.clients]),
-        syncStatus, manualSync, lastSyncError, isDirty, userId: user?.id, isDataLoading,
-        effectiveUserId,
-        permissions: currentUserPermissions,
-        isAutoSyncEnabled: userSettings.isAutoSyncEnabled, setAutoSyncEnabled: (v: boolean) => updateSettings(p => ({...p, isAutoSyncEnabled: v})),
-        isAutoBackupEnabled: userSettings.isAutoBackupEnabled, setAutoBackupEnabled: (v: boolean) => updateSettings(p => ({...p, isAutoBackupEnabled: v})),
-        adminTasksLayout: userSettings.adminTasksLayout, setAdminTasksLayout: (v: any) => updateSettings(p => ({...p, adminTasksLayout: v})),
-        locationOrder: userSettings.locationOrder, setLocationOrder: (v: any) => updateSettings(p => ({...p, locationOrder: v})),
-        exportData: React.useCallback(() => {
-             try {
-                const dataToExport = { ...data, profiles: undefined, siteFinances: undefined };
-                const jsonString = JSON.stringify(dataToExport, null, 2);
-                const blob = new Blob([jsonString], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url;
-                a.download = `lawyer_app_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-                document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                return true;
-            } catch (e) { console.error(e); return false; }
-        }, [data]),
-        triggeredAlerts, dismissAlert: (id: string) => setTriggeredAlerts(p => p.filter(a => a.id !== id)),
-        realtimeAlerts, dismissRealtimeAlert: (id: number) => setRealtimeAlerts(p => p.filter(a => a.id !== id)),
-        addRealtimeAlert,
-        userApprovalAlerts, dismissUserApprovalAlert: (id: number) => setUserApprovalAlerts(p => p.filter(a => a.id !== id)),
-        showUnpostponedSessionsModal, setShowUnpostponedSessionsModal,
-        fetchAndRefresh,
-        deleteClient: (id: string) => { updateData(p => ({ ...p, clients: p.clients.filter(c => c.id !== id) })); createDeleteFunction('clients')(id); },
-        deleteCase: async (caseId: string, clientId: string) => {
-             const docsToDelete = data.documents.filter(doc => doc.caseId === caseId);
-             const docIdsToDelete = docsToDelete.map(doc => doc.id);
-             const docPathsToDelete = docsToDelete.map(doc => doc.storagePath).filter(Boolean);
-             updateData(p => {
-                const updatedClients = p.clients.map(c => c.id === clientId ? { ...c, cases: c.cases.filter(cs => cs.id !== caseId) } : c);
-                return { ...p, clients: updatedClients, documents: p.documents.filter(doc => doc.caseId !== caseId) };
-             });
-             if (effectiveUserId) {
-                 const db = await getDb();
-                 const newDeletedIds = { ...deletedIds, cases: [...deletedIds.cases, caseId], documents: [...deletedIds.documents, ...docIdsToDelete], documentPaths: [...deletedIds.documentPaths, ...docPathsToDelete] };
-                 setDeletedIds(newDeletedIds);
-                 await db.put(DATA_STORE_NAME, newDeletedIds, `deletedIds_${effectiveUserId}`);
-                 setDirty(true);
-             }
-        },
-        deleteStage: (sid: string, cid: string, clid: string) => { updateData(p => ({ ...p, clients: p.clients.map(c => c.id === clid ? { ...c, cases: c.cases.map(cs => cs.id === cid ? { ...cs, stages: cs.stages.filter(st => st.id !== sid) } : cs) } : c) })); createDeleteFunction('stages')(sid); },
-        deleteSession: (sessId: string, stId: string, cid: string, clid: string) => { updateData(p => ({ ...p, clients: p.clients.map(c => c.id === clid ? { ...c, cases: c.cases.map(cs => cs.id === cid ? { ...cs, stages: cs.stages.map(st => st.id === stId ? { ...st, sessions: st.sessions.filter(s => s.id !== sessId) } : st) } : cs) } : c) })); createDeleteFunction('sessions')(sessId); },
-        deleteAdminTask: (id: string) => { updateData(p => ({...p, adminTasks: p.adminTasks.filter(t => t.id !== id)})); createDeleteFunction('adminTasks')(id); },
-        deleteAppointment: (id: string) => { updateData(p => ({...p, appointments: p.appointments.filter(a => a.id !== id)})); createDeleteFunction('appointments')(id); },
-        deleteAccountingEntry: (id: string) => { updateData(p => ({...p, accountingEntries: p.accountingEntries.filter(e => e.id !== id)})); createDeleteFunction('accountingEntries')(id); },
-        deleteInvoice: (id: string) => { updateData(p => ({...p, invoices: p.invoices.filter(i => i.id !== id)})); createDeleteFunction('invoices')(id); },
-        deleteAssistant: (name: string) => { updateData(p => ({...p, assistants: p.assistants.filter(a => a !== name)})); createDeleteFunction('assistants')(name); },
-        deleteDocument: async (doc: CaseDocument) => {
-            const db = await getDb();
-            await db.delete(DOCS_FILES_STORE_NAME, doc.id);
-            await db.delete(DOCS_METADATA_STORE_NAME, doc.id);
-            updateData(p => ({ ...p, documents: p.documents.filter(d => d.id !== doc.id) }));
-            if(effectiveUserId) {
-                const newDeletedIds = { ...deletedIds, documents: [...deletedIds.documents, doc.id], documentPaths: [...deletedIds.documentPaths, doc.storagePath] };
-                setDeletedIds(newDeletedIds);
-                await db.put(DATA_STORE_NAME, newDeletedIds, `deletedIds_${effectiveUserId}`);
+            // Save Metadata & File Locally immediately
+            await db.put(DOCS_METADATA_STORE_NAME, newDoc);
+            await db.put(DOCS_FILES_STORE_NAME, file, docId);
+            setDocuments(prev => [...prev, newDoc]);
+            
+            // Attempt Upload
+            if (isOnline && supabase) {
+                try {
+                    const { error } = await supabase.storage.from('documents').upload(storagePath, file);
+                    if (error) throw error;
+                    await updateDocumentState(docId, 'synced');
+                } catch (e) {
+                    console.error("Upload failed:", e);
+                    await updateDocumentState(docId, 'error'); // Retry logic could be added here
+                }
             }
-        },
-        addDocuments: async (caseId: string, files: FileList) => {
-             const db = await getDb();
-             const newDocs: CaseDocument[] = [];
-             
-             // Process files sequentially to handle compression
-             for (let i = 0; i < files.length; i++) {
-                 let file = files[i];
-                 
-                 try {
-                     // Attempt compression
-                     file = await compressImage(file);
-                 } catch (e) {
-                     console.warn("Image compression failed, using original file", e);
-                 }
-
-                 const docId = `doc-${Date.now()}-${i}`;
-                 const lastDot = file.name.lastIndexOf('.');
-                 const extension = lastDot !== -1 ? file.name.substring(lastDot) : '';
-                 // Normalize extension for compressed images
-                 const finalExtension = file.type === 'image/jpeg' && extension !== '.jpg' && extension !== '.jpeg' ? '.jpg' : extension;
-                 
-                 const safeStoragePath = `${effectiveUserId || user!.id}/${caseId}/${docId}${finalExtension}`;
-                 
-                 const doc: CaseDocument = {
-                     id: docId, 
-                     caseId, 
-                     userId: effectiveUserId || user!.id, 
-                     name: file.name, 
-                     type: file.type || 'application/octet-stream', 
-                     size: file.size, 
-                     addedAt: new Date(), 
-                     storagePath: safeStoragePath, 
-                     localState: 'pending_upload', 
-                     updated_at: new Date(),
-                 };
-                 
-                 await db.put(DOCS_FILES_STORE_NAME, file, doc.id);
-                 await db.put(DOCS_METADATA_STORE_NAME, doc, doc.id);
-                 newDocs.push(doc);
-             }
-             updateData(p => ({...p, documents: [...p.documents, ...newDocs]}));
-        },
-        getDocumentFile,
-        postponeSession: (sessionId: string, newDate: Date, newReason: string) => {
-             updateData(prev => {
-                 const newClients = prev.clients.map(client => {
-                    let clientModified = false;
-                    const newCases = client.cases.map(caseItem => {
-                        let caseModified = false;
-                        const newStages = caseItem.stages.map(stage => {
-                            const sessionIndex = stage.sessions.findIndex(s => s.id === sessionId);
-                            if (sessionIndex !== -1) {
-                                const oldSession = stage.sessions[sessionIndex];
-                                const newSession: Session = { id: `session-${Date.now()}`, court: oldSession.court, caseNumber: oldSession.caseNumber, date: newDate, clientName: oldSession.clientName, opponentName: oldSession.opponentName, postponementReason: newReason, isPostponed: false, assignee: oldSession.assignee, updated_at: new Date(), user_id: oldSession.user_id };
-                                const updatedOldSession: Session = { ...oldSession, isPostponed: true, nextSessionDate: newDate, nextPostponementReason: newReason, updated_at: new Date() };
-                                const newSessions = [...stage.sessions]; newSessions[sessionIndex] = updatedOldSession; newSessions.push(newSession);
-                                caseModified = true; clientModified = true;
-                                return { ...stage, sessions: newSessions, updated_at: new Date() };
-                            }
-                            return stage;
-                        });
-                        if (caseModified) return { ...caseItem, stages: newStages, updated_at: new Date() };
-                        return caseItem;
-                    });
-                    if (clientModified) return { ...client, cases: newCases, updated_at: new Date() };
-                    return client;
-                });
-                return newClients.some((c, i) => c !== prev.clients[i]) ? { ...prev, clients: newClients } : prev;
-             });
         }
+        setIsDirty(true);
+    };
+
+    const deleteDocument = async (doc: CaseDocument) => {
+        const db = await getDb();
+        // Delete Local
+        await db.delete(DOCS_METADATA_STORE_NAME, doc.id);
+        await db.delete(DOCS_FILES_STORE_NAME, doc.id);
+        setDocuments(prev => prev.filter(d => d.id !== doc.id));
+        
+        // Mark for Remote Deletion
+        setDeletedIds(prev => ({ 
+            ...prev, 
+            documents: [...prev.documents, doc.id],
+            documentPaths: [...prev.documentPaths, doc.storagePath] 
+        }));
+        setIsDirty(true);
+    };
+
+    // --- Entity Deletion Handlers ---
+    const deleteClient = (id: string) => {
+        setClients(prev => prev.filter(c => c.id !== id));
+        setDeletedIds(prev => ({ ...prev, clients: [...prev.clients, id] }));
+        setIsDirty(true);
+    };
+    const deleteCase = (caseId: string, clientId: string) => {
+        setClients(prev => prev.map(c => c.id === clientId ? { ...c, cases: c.cases.filter(cs => cs.id !== caseId) } : c));
+        setDeletedIds(prev => ({ ...prev, cases: [...prev.cases, caseId] }));
+        setIsDirty(true);
+    };
+    const deleteStage = (stageId: string, caseId: string, clientId: string) => {
+        setClients(prev => prev.map(c => c.id === clientId ? { ...c, cases: c.cases.map(cs => cs.id === caseId ? { ...cs, stages: cs.stages.filter(s => s.id !== stageId) } : cs) } : c));
+        setDeletedIds(prev => ({ ...prev, stages: [...prev.stages, stageId] }));
+        setIsDirty(true);
+    };
+    const deleteSession = (sessionId: string, stageId: string, caseId: string, clientId: string) => {
+        setClients(prev => prev.map(c => c.id === clientId ? { ...c, cases: c.cases.map(cs => cs.id === caseId ? { ...cs, stages: cs.stages.map(s => s.id === stageId ? { ...s, sessions: s.sessions.filter(ss => ss.id !== sessionId) } : s) } : cs) } : c));
+        setDeletedIds(prev => ({ ...prev, sessions: [...prev.sessions, sessionId] }));
+        setIsDirty(true);
+    };
+    const deleteAdminTask = (id: string) => {
+        setAdminTasks(prev => prev.filter(t => t.id !== id));
+        setDeletedIds(prev => ({ ...prev, adminTasks: [...prev.adminTasks, id] }));
+        setIsDirty(true);
+    };
+    const deleteAppointment = (id: string) => {
+        setAppointments(prev => prev.filter(a => a.id !== id));
+        setDeletedIds(prev => ({ ...prev, appointments: [...prev.appointments, id] }));
+        setIsDirty(true);
+    };
+    const deleteAccountingEntry = (id: string) => {
+        setAccountingEntries(prev => prev.filter(e => e.id !== id));
+        setDeletedIds(prev => ({ ...prev, accountingEntries: [...prev.accountingEntries, id] }));
+        setIsDirty(true);
+    };
+    const deleteInvoice = (id: string) => {
+        setInvoices(prev => prev.filter(i => i.id !== id));
+        setDeletedIds(prev => ({ ...prev, invoices: [...prev.invoices, id] }));
+        setIsDirty(true);
+    };
+    const deleteAssistant = (name: string) => {
+        setAssistants(prev => prev.filter(a => a !== name));
+        setDeletedIds(prev => ({ ...prev, assistants: [...prev.assistants, name] }));
+        setIsDirty(true);
+    };
+
+    // --- Complex Actions ---
+    const postponeSession = (sessionId: string, newDate: Date, reason: string) => {
+        setClients(prev => prev.map(client => ({
+            ...client,
+            cases: client.cases.map(caseItem => ({
+                ...caseItem,
+                stages: caseItem.stages.map(stage => {
+                    const sessionIndex = stage.sessions.findIndex(s => s.id === sessionId);
+                    if (sessionIndex === -1) return stage;
+
+                    const updatedSessions = [...stage.sessions];
+                    const currentSession = updatedSessions[sessionIndex];
+                    
+                    // Mark current as postponed
+                    updatedSessions[sessionIndex] = {
+                        ...currentSession,
+                        isPostponed: true,
+                        nextSessionDate: newDate,
+                        nextPostponementReason: reason,
+                        updated_at: new Date(),
+                    };
+
+                    // Create new session
+                    const newSession: Session = {
+                        id: `session-${Date.now()}`,
+                        court: stage.court,
+                        caseNumber: stage.caseNumber,
+                        date: newDate,
+                        clientName: client.name,
+                        opponentName: caseItem.opponentName,
+                        isPostponed: false,
+                        postponementReason: reason,
+                        assignee: currentSession.assignee, // Inherit assignee
+                        updated_at: new Date(),
+                        user_id: user?.id,
+                    };
+                    updatedSessions.push(newSession);
+
+                    return { ...stage, sessions: updatedSessions, updated_at: new Date() };
+                }),
+                updated_at: new Date()
+            })),
+            updated_at: new Date()
+        })));
+        setIsDirty(true);
+    };
+
+    const setFullData = (data: any) => {
+        const validated = validateAndFixData(data, user);
+        setClients(validated.clients);
+        setAdminTasks(validated.adminTasks);
+        setAppointments(validated.appointments);
+        setAccountingEntries(validated.accountingEntries);
+        setInvoices(validated.invoices);
+        setAssistants(validated.assistants);
+        setIsDirty(true);
+    };
+
+    const exportData = () => {
+        const data = { clients, adminTasks, appointments, accountingEntries, invoices, assistants };
+        const jsonString = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lawyer_app_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return true;
+    };
+
+    // --- Sync Hook Integration ---
+    const syncData = { clients, adminTasks, appointments, accountingEntries, invoices, assistants, documents, profiles, siteFinances };
+    const { manualSync, fetchAndRefresh } = useSync({
+        user: effectiveUser, // Sync using the lawyer's ID if user is an assistant
+        localData: syncData,
+        deletedIds,
+        onDataSynced: (mergedData) => {
+            setClients(mergedData.clients);
+            setAdminTasks(mergedData.adminTasks);
+            setAppointments(mergedData.appointments);
+            setAccountingEntries(mergedData.accountingEntries);
+            setInvoices(mergedData.invoices);
+            setAssistants(mergedData.assistants);
+            setDocuments(mergedData.documents);
+            setProfiles(mergedData.profiles);
+            setSiteFinances(mergedData.siteFinances);
+            setIsDirty(false);
+        },
+        onDeletionsSynced: (syncedDeletions) => {
+            setDeletedIds(prev => {
+                const newDeletions = { ...prev };
+                (Object.keys(syncedDeletions) as Array<keyof DeletedIds>).forEach(key => {
+                    newDeletions[key] = prev[key].filter(id => !syncedDeletions[key]!.includes(id));
+                });
+                return newDeletions;
+            });
+        },
+        onSyncStatusChange: (status, error) => {
+            setSyncStatus(status);
+            setLastSyncError(error);
+        },
+        isOnline,
+        isAuthLoading,
+        syncStatus
+    });
+
+    return {
+        clients, setClients,
+        adminTasks, setAdminTasks,
+        appointments, setAppointments,
+        accountingEntries, setAccountingEntries,
+        invoices, setInvoices,
+        assistants, setAssistants,
+        documents, setDocuments, addDocuments, deleteDocument, getDocumentFile,
+        profiles, setProfiles,
+        siteFinances, setSiteFinances,
+        permissions,
+        
+        isDataLoading,
+        syncStatus,
+        lastSyncError,
+        isDirty,
+        manualSync,
+        fetchAndRefresh,
+        
+        deleteClient, deleteCase, deleteStage, deleteSession, deleteAdminTask, deleteAppointment, deleteAccountingEntry, deleteInvoice, deleteAssistant,
+        postponeSession,
+        setFullData, exportData,
+        
+        isAutoSyncEnabled, setAutoSyncEnabled,
+        isAutoBackupEnabled, setAutoBackupEnabled,
+        adminTasksLayout, setAdminTasksLayout,
+        locationOrder, setLocationOrder,
+        
+        showUnpostponedSessionsModal, setShowUnpostponedSessionsModal,
+        triggeredAlerts, dismissAlert,
+        realtimeAlerts, dismissRealtimeAlert, addRealtimeAlert,
+        userApprovalAlerts, dismissUserApprovalAlert,
+        userId: user?.id,
+        allSessions, // Exposed for App.tsx usage
+        unpostponedSessions, // Exposed for App.tsx usage
     };
 };

@@ -2,7 +2,7 @@
 import * as React from 'react';
 // Fix: Use `import type` for User as it is used as a type, not a value. This resolves module resolution errors in some environments.
 import type { User } from '@supabase/supabase-js';
-import { checkSupabaseSchema, fetchDataFromSupabase, upsertDataToSupabase, FlatData, deleteDataFromSupabase, transformRemoteToLocal, fetchDeletionsFromSupabase } from './useOnlineData';
+import { checkSupabaseSchema, fetchDataFromSupabase, upsertDataToSupabase, FlatData, deleteDataFromSupabase, fetchDeletionsFromSupabase } from './useOnlineData';
 import { getSupabaseClient } from '../supabaseClient';
 import { Client, Case, Stage, Session, CaseDocument, AppData, DeletedIds, getInitialDeletedIds, SyncDeletion } from '../types';
 
@@ -84,7 +84,7 @@ const constructData = (flatData: Partial<FlatData>): AppData => {
         invoices: (flatData.invoices || []).map(inv => ({...inv, items: invoiceItemMap.get(inv.id) || []})) as any,
         documents: (flatData.case_documents || []) as any,
         profiles: (flatData.profiles || []) as any,
-        siteFinances: (flatData.site_finances || []) as any,
+        site_finances: (flatData.site_finances || []) as any,
     };
 };
 
@@ -468,4 +468,28 @@ export const useSync = ({ user, localData, deletedIds, onDataSynced, onDeletions
     }, [localData, deletedIds, userRef, isOnline, onDataSynced, isAuthLoading, syncStatus]);
 
     return { manualSync, fetchAndRefresh };
+};
+
+// Helper to safely convert potentially string values to Date objects
+const toDate = (val: any) => val ? new Date(val) : undefined;
+const toDateReq = (val: any) => val ? new Date(val) : new Date();
+
+// Helper to transform remote snake_case data to local camelCase format
+export const transformRemoteToLocal = (remote: any): Partial<FlatData> => {
+    if (!remote) return {};
+    return {
+        clients: remote.clients?.map(({ contact_info, updated_at, ...r }: any) => ({ ...r, contactInfo: contact_info, updated_at: toDate(updated_at) })),
+        cases: remote.cases?.map(({ client_name, opponent_name, fee_agreement, updated_at, ...r }: any) => ({ ...r, clientName: client_name, opponentName: opponent_name, feeAgreement: fee_agreement, updated_at: toDate(updated_at) })),
+        stages: remote.stages?.map(({ case_number, first_session_date, decision_date, decision_number, decision_summary, decision_notes, updated_at, ...r }: any) => ({ ...r, caseNumber: case_number, firstSessionDate: toDate(first_session_date), decisionDate: toDate(decision_date), decisionNumber: decision_number, decisionSummary: decision_summary, decisionNotes: decision_notes, updated_at: toDate(updated_at) })),
+        sessions: remote.sessions?.map(({ case_number, client_name, opponent_name, postponement_reason, next_postponement_reason, is_postponed, next_session_date, updated_at, date, ...r }: any) => ({ ...r, caseNumber: case_number, clientName: client_name, opponentName: opponent_name, postponementReason: postponement_reason, nextPostponementReason: next_postponement_reason, isPostponed: is_postponed, nextSessionDate: toDate(next_session_date), date: toDateReq(date), updated_at: toDate(updated_at) })),
+        admin_tasks: remote.admin_tasks?.map(({ due_date, order_index, updated_at, ...r }: any) => ({ ...r, dueDate: toDateReq(due_date), orderIndex: order_index, updated_at: toDate(updated_at) })),
+        appointments: remote.appointments?.map(({ reminder_time_in_minutes, updated_at, date, ...r }: any) => ({ ...r, reminderTimeInMinutes: reminder_time_in_minutes, date: toDateReq(date), updated_at: toDate(updated_at) })),
+        accounting_entries: remote.accounting_entries?.map(({ client_id, case_id, client_name, updated_at, date, ...r }: any) => ({ ...r, clientId: client_id, caseId: case_id, clientName: client_name, date: toDateReq(date), updated_at: toDate(updated_at) })),
+        assistants: remote.assistants?.map((a: any) => ({ name: a.name })),
+        invoices: remote.invoices?.map(({ client_id, client_name, case_id, case_subject, issue_date, due_date, tax_rate, updated_at, ...r }: any) => ({ ...r, clientId: client_id, clientName: client_name, caseId: case_id, caseSubject: case_subject, issueDate: toDateReq(issue_date), dueDate: toDateReq(due_date), taxRate: tax_rate, updated_at: toDate(updated_at) })),
+        invoice_items: remote.invoice_items?.map(({updated_at, ...r}: any) => ({...r, updated_at: toDate(updated_at)})),
+        case_documents: remote.case_documents?.map(({ user_id, case_id, added_at, storage_path, updated_at, ...r }: any) => ({...r, userId: user_id, caseId: case_id, addedAt: toDateReq(added_at), storagePath: storage_path, updated_at: toDate(updated_at) })),
+        profiles: remote.profiles?.map(({ full_name, mobile_number, is_approved, is_active, subscription_start_date, subscription_end_date, lawyer_id, permissions, created_at, updated_at, ...r }: any) => ({ ...r, full_name, mobile_number, is_approved, is_active, subscription_start_date, subscription_end_date, lawyer_id, permissions, created_at, updated_at: toDate(updated_at) })),
+        site_finances: remote.site_finances?.map(({updated_at, payment_date, ...r}: any) => ({...r, payment_date, updated_at: toDate(updated_at)})),
+    };
 };

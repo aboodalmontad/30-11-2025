@@ -31,7 +31,11 @@ const CaseAccounting: React.FC<CaseAccountingProps> = ({ caseData, client, caseA
     }
 
     const sortedEntries = React.useMemo(() =>
-        [...caseAccountingEntries].sort((a, b) => b.date.getTime() - a.date.getTime()),
+        [...caseAccountingEntries].sort((a, b) => {
+            const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+            const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+            return dateB.getTime() - dateA.getTime();
+        }),
         [caseAccountingEntries]
     );
 

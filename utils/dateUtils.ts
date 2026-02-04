@@ -1,5 +1,15 @@
 
 
+// Helper function to ensure input is a valid Date object
+const ensureDate = (date: any): Date | null => {
+    if (!date) return null;
+    if (date instanceof Date) {
+        return isNaN(date.getTime()) ? null : date;
+    }
+    const d = new Date(date);
+    return isNaN(d.getTime()) ? null : d;
+};
+
 export const getDaysInMonth = (year: number, month: number): Date[] => {
     const date = new Date(year, month, 1);
     const days: Date[] = [];
@@ -14,28 +24,38 @@ export const getFirstDayOfMonth = (year: number, month: number): number => {
     return new Date(year, month, 1).getDay();
 };
 
-export const isSameDay = (date1: Date, date2: Date): boolean => {
-    return date1.getFullYear() === date2.getFullYear() &&
-           date1.getMonth() === date2.getMonth() &&
-           date1.getDate() === date2.getDate();
+export const isSameDay = (date1: any, date2: any): boolean => {
+    const d1 = ensureDate(date1);
+    const d2 = ensureDate(date2);
+    if (!d1 || !d2) return false;
+
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
 };
 
-export const isToday = (date: Date): boolean => {
+export const isToday = (date: any): boolean => {
     return isSameDay(date, new Date());
 }
 
-export const isBeforeToday = (date: Date): boolean => {
+export const isBeforeToday = (date: any): boolean => {
+    const d = ensureDate(date);
+    if (!d) return false;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Set to start of today
-    return date < today;
+    return d < today;
 }
 
-export const formatDate = (date: Date): string => {
+export const formatDate = (date: any): string => {
+    const d = ensureDate(date);
+    if (!d) return '';
+
     return new Intl.DateTimeFormat('ar-SY', {
         year: 'numeric',
         month: 'long',
         day: 'numeric'
-    }).format(date);
+    }).format(d);
 };
 
 /**
@@ -110,8 +130,10 @@ const floatingHolidays: { [year: number]: { month: number; day: number; name: st
  * @param date The date to check.
  * @returns True if the date is a Friday or Saturday.
  */
-export const isWeekend = (date: Date): boolean => {
-    const day = date.getDay();
+export const isWeekend = (date: any): boolean => {
+    const d = ensureDate(date);
+    if (!d) return false;
+    const day = d.getDay();
     return day === 5 || day === 6; // 5 = Friday, 6 = Saturday
 };
 
@@ -120,10 +142,13 @@ export const isWeekend = (date: Date): boolean => {
  * @param date The date to check.
  * @returns The name of the holiday if it is one, otherwise null.
  */
-export const getPublicHoliday = (date: Date): string | null => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const day = date.getDate();
+export const getPublicHoliday = (date: any): string | null => {
+    const d = ensureDate(date);
+    if (!d) return null;
+
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const day = d.getDate();
 
     // Check fixed holidays
     const fixedHoliday = fixedHolidays.find(h => h.month === month && h.day === day);
@@ -139,7 +164,7 @@ export const getPublicHoliday = (date: Date): string | null => {
             const endDate = new Date(startDate);
             endDate.setDate(startDate.getDate() + holiday.length - 1);
 
-            if (date >= startDate && date <= endDate) {
+            if (d >= startDate && d <= endDate) {
                 return holiday.name;
             }
         } else { // For single-day holidays

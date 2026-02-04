@@ -237,7 +237,10 @@ export interface CaseDocument {
   size: number;
   addedAt: Date;
   storagePath: string; // e.g., 'user-uuid/case-id/doc-id-filename.pdf'
-  localState: 'synced' | 'pending_upload' | 'pending_download' | 'error' | 'downloading';
+  // 'synced': On Cloud & Local
+  // 'archived': Local Only (Safe - Deleted from Cloud)
+  // 'expired': Missing (Deleted from Cloud & Not Local)
+  localState: 'synced' | 'pending_upload' | 'pending_download' | 'error' | 'downloading' | 'expired' | 'archived';
   updated_at?: Date;
 }
 

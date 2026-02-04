@@ -33,7 +33,13 @@ const EntriesTab: React.FC = () => {
                 entry.amount.toString().includes(searchQuery)
             );
         });
-        return filtered.sort((a, b) => b.date.getTime() - a.date.getTime());
+        
+        // Robust sort to handle potential string dates
+        return filtered.sort((a, b) => {
+            const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+            const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+            return dateB.getTime() - dateA.getTime();
+        });
     }, [accountingEntries, searchQuery]);
 
     const handleOpenModal = (entry?: AccountingEntry) => {

@@ -1,7 +1,8 @@
+
 import * as React from 'react';
 import { useData } from '../context/DataContext';
 import { CaseDocument } from '../types';
-import { DocumentArrowUpIcon, TrashIcon, EyeIcon, DocumentTextIcon, PhotoIcon, XMarkIcon, ExclamationTriangleIcon, ArrowPathIcon, CameraIcon, CloudArrowUpIcon, CloudArrowDownIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon } from './icons';
+import { DocumentArrowUpIcon, TrashIcon, EyeIcon, DocumentTextIcon, PhotoIcon, XMarkIcon, ExclamationTriangleIcon, ArrowPathIcon, CameraIcon, CloudArrowUpIcon, CloudArrowDownIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon, ShieldCheckIcon, FolderIcon } from './icons';
 import { renderAsync } from 'docx-preview';
 
 interface CaseDocumentsProps {
@@ -9,22 +10,49 @@ interface CaseDocumentsProps {
 }
 
 const SyncStatusIcon: React.FC<{ state: CaseDocument['localState'] }> = ({ state }) => {
+    // WhatsApp-like indicators
     switch (state) {
         case 'synced':
-            return <CheckCircleIcon className="w-5 h-5 text-green-500" title="تمت المزامنة" />;
+            // Double Blue Check: Received & Downloaded (Available locally and server)
+            return (
+                <div className="flex -space-x-1" title="تم التحميل والحفظ محلياً">
+                    <CheckCircleIcon className="w-4 h-4 text-blue-500" />
+                    <CheckCircleIcon className="w-4 h-4 text-blue-500" />
+                </div>
+            );
+        case 'archived':
+            // Double Green Check or Database Icon: Archived Locally (Deleted from server to save space, but safe here)
+            return (
+                <div className="flex items-center gap-1 bg-green-100 px-1.5 rounded-full" title="مؤرشف محلياً (تم حذفه من السحابة لتوفير المساحة)">
+                    <CheckCircleIcon className="w-3 h-3 text-green-600" />
+                    <span className="text-[10px] text-green-700 font-bold">محفوظ</span>
+                </div>
+            );
         case 'pending_upload':
-            return <CloudArrowUpIcon className="w-5 h-5 text-blue-500 animate-pulse" title="بانتظار الرفع" />;
+            // Clock icon: Waiting to leave device
+            return <ArrowPathIcon className="w-4 h-4 text-gray-400 animate-spin" title="جاري الإرسال..." />;
         case 'pending_download':
-            return <CloudArrowDownIcon className="w-5 h-5 text-gray-400" title="جاهز للتنزيل" />;
+            // Single Grey Check: Delivered to Server, waiting for download
+            return <CheckCircleIcon className="w-4 h-4 text-gray-400" title="وصل للسحابة (اضغط للتنزيل)" />;
         case 'downloading':
-            return <CloudArrowDownIcon className="w-5 h-5 text-blue-500 animate-spin" title="جاري التنزيل..." />;
+            return <CloudArrowDownIcon className="w-4 h-4 text-blue-500 animate-bounce" title="جاري التنزيل..." />;
         case 'error':
-            return <ExclamationCircleIcon className="w-5 h-5 text-red-500" title="فشل المزامنة" />;
+            return <ExclamationCircleIcon className="w-4 h-4 text-red-500" title="فشل" />;
+        case 'expired':
+            // Red exclamation: Gone from server and not here
+            return <ExclamationTriangleIcon className="w-4 h-4 text-red-500" title="منتهي الصلاحية (غير موجود في السحابة)" />;
         default:
             return null;
     }
 };
 
+const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
 
 const FilePreview: React.FC<{ doc: CaseDocument, onPreview: (doc: CaseDocument) => void, onDelete: (doc: CaseDocument) => void }> = ({ doc, onPreview, onDelete }) => {
     const [thumbnailUrl, setThumbnailUrl] = React.useState<string | null>(null);
@@ -35,7 +63,8 @@ const FilePreview: React.FC<{ doc: CaseDocument, onPreview: (doc: CaseDocument) 
         let objectUrl: string | null = null;
         let isMounted = true;
         const generateThumbnail = async () => {
-            if (doc.localState === 'pending_download' || !doc.type.startsWith('image/')) {
+            // Only generate thumbnails for images that are available locally
+            if ((doc.localState !== 'synced' && doc.localState !== 'archived') || !doc.type.startsWith('image/')) {
                  setIsLoadingThumbnail(false);
                  return;
             }
@@ -64,35 +93,65 @@ const FilePreview: React.FC<{ doc: CaseDocument, onPreview: (doc: CaseDocument) 
         };
     }, [doc.id, doc.type, doc.localState, getDocumentFile]);
     
+    // Determine card background based on state
+    const isAvailable = doc.localState === 'synced' || doc.localState === 'archived';
+    const isExpired = doc.localState === 'expired';
+    const cardBg = isExpired ? 'bg-red-50 opacity-75' : isAvailable ? 'bg-white' : 'bg-gray-50';
+    const borderClass = isExpired ? 'border-red-200' : 'border-gray-200';
+    
     return (
-        <div className="relative group border rounded-lg overflow-hidden bg-gray-50 flex flex-col aspect-w-1 aspect-h-1">
-            <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); onDelete(doc); }} className="p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md">
+        <div 
+            className={`relative group border ${borderClass} rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 flex flex-col ${cardBg}`}
+            title={isExpired ? "هذا الملف لم يعد متاحاً في السحابة" : doc.name}
+        >
+            {/* Action Overlay */}
+            <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={(e) => { e.stopPropagation(); onDelete(doc); }} className="p-1.5 bg-white text-red-600 rounded-full shadow-md hover:bg-red-50 border border-gray-100">
                     <TrashIcon className="w-4 h-4" />
                 </button>
             </div>
-             <div className="absolute top-2 left-2 z-10">
-                <SyncStatusIcon state={doc.localState} />
-            </div>
+
+            {/* Thumbnail / Icon Area */}
             <div 
-                className="flex-grow flex items-center justify-center cursor-pointer overflow-hidden"
+                className={`aspect-w-1 aspect-h-1 flex items-center justify-center cursor-pointer overflow-hidden relative ${isAvailable ? 'bg-gray-100' : 'bg-gray-200'}`}
                 onClick={() => onPreview(doc)}
             >
                 {isLoadingThumbnail ? (
-                     <div className="flex-grow flex items-center justify-center bg-gray-200 w-full h-full">
-                        <ArrowPathIcon className="w-8 h-8 text-gray-400 animate-spin"/>
+                     <div className="w-full h-full flex items-center justify-center">
+                        <ArrowPathIcon className="w-6 h-6 text-gray-400 animate-spin"/>
                     </div>
                 ) : thumbnailUrl ? (
-                    <img src={thumbnailUrl} alt={doc.name} className="object-cover w-full h-full" />
+                    <img src={thumbnailUrl} alt={doc.name} className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105" />
                 ) : (
-                    <div className="flex-grow flex items-center justify-center bg-gray-200 w-full h-full">
-                        <DocumentTextIcon className="w-12 h-12 text-gray-400" />
+                    <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 gap-2 p-4">
+                        {doc.type.includes('pdf') ? <DocumentTextIcon className="w-12 h-12 text-red-400"/> : 
+                         doc.type.includes('image') ? <PhotoIcon className="w-12 h-12 text-purple-400"/> :
+                         <DocumentTextIcon className="w-12 h-12 text-blue-400"/>}
+                         {!isAvailable && !isExpired && <span className="text-[10px] font-bold bg-white/70 px-2 py-1 rounded-full text-gray-600 shadow-sm">اضغط للتحميل</span>}
+                    </div>
+                )}
+                
+                {/* Overlay for expired/missing */}
+                {isExpired && (
+                    <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center backdrop-blur-[1px]">
+                        <ExclamationTriangleIcon className="w-8 h-8 text-red-500 mb-1" />
+                        <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded border border-red-100">منتهي الصلاحية</span>
                     </div>
                 )}
             </div>
-            <div className="p-2 bg-white/80 backdrop-blur-sm border-t">
-                <p className="text-xs font-medium text-gray-800 truncate" title={doc.name}>{doc.name}</p>
-                <p className="text-xs text-gray-500">{(doc.size / 1024).toFixed(1)} KB</p>
+
+            {/* Meta Data Footer */}
+            <div className="p-2.5 border-t border-gray-100 flex flex-col gap-1.5 bg-white/50 backdrop-blur-sm">
+                <div className="flex justify-between items-start gap-2">
+                    <p className="text-xs font-semibold text-gray-800 truncate flex-grow text-right" dir="auto">{doc.name}</p>
+                    <div className="flex-shrink-0">
+                        <SyncStatusIcon state={doc.localState} />
+                    </div>
+                </div>
+                <div className="flex justify-between items-center text-[10px] text-gray-500 font-medium">
+                    <span>{formatFileSize(doc.size)}</span>
+                    <span className="uppercase tracking-wider bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{doc.name.split('.').pop()?.slice(0,4) || 'FILE'}</span>
+                </div>
             </div>
         </div>
     );
@@ -212,9 +271,11 @@ const PreviewModal: React.FC<{ doc: CaseDocument; onClose: () => void }> = ({ do
                 } else {
                     const latestDocState = documents.find(d => d.id === doc.id)?.localState;
                     if (latestDocState === 'error') {
-                        setError('فشل تنزيل الملف. يرجى التحقق من اتصالك بالإنترنت والتأكد من تطبيق صلاحيات التخزين (Storage Policies) بشكل صحيح في لوحة تحكم Supabase.');
+                        setError('فشل تنزيل الملف. يرجى التحقق من اتصالك بالإنترنت.');
+                    } else if (latestDocState === 'expired') {
+                        setError('عذراً، انتهت صلاحية هذا الملف وتم حذفه من الخادم.');
                     } else {
-                        setError('الملف غير متوفر محلياً. حاول مرة أخرى عند توفر اتصال بالإنترنت لتنزيله.');
+                        setError('جاري محاولة التنزيل... يرجى الانتظار.');
                     }
                 }
             } catch (e: any) {
@@ -289,6 +350,7 @@ const PreviewModal: React.FC<{ doc: CaseDocument; onClose: () => void }> = ({ do
 
 
 const DocumentScannerModal: React.FC<{ onClose: () => void; onCapture: (file: File) => void }> = ({ onClose, onCapture }) => {
+    // ... (Camera modal implementation stays exactly same as before, omitted for brevity but assumed present in final output)
     const videoRef = React.useRef<HTMLVideoElement>(null);
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
     const streamRef = React.useRef<MediaStream | null>(null);
@@ -338,11 +400,10 @@ const DocumentScannerModal: React.FC<{ onClose: () => void; onCapture: (file: Fi
             const context = canvas.getContext('2d', { willReadFrequently: true });
             if (!context) return;
             
-            // Apply scanner-like filters to enhance the document image, remove shadows, and whiten background
             context.filter = 'grayscale(1) contrast(1.5) brightness(1.15)';
             context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
             
-            setIsPreview(true); // Switch to preview mode
+            setIsPreview(true);
         }
     };
     
@@ -362,10 +423,10 @@ const DocumentScannerModal: React.FC<{ onClose: () => void; onCapture: (file: Fi
         const canvas = canvasRef.current;
         const context = canvas?.getContext('2d');
         if (canvas && context) {
-            context.filter = 'none'; // Reset filter before clearing
+            context.filter = 'none';
             context.clearRect(0, 0, canvas.width, canvas.height);
         }
-        setIsPreview(false); // Go back to camera view
+        setIsPreview(false);
     };
 
     return (
@@ -374,7 +435,6 @@ const DocumentScannerModal: React.FC<{ onClose: () => void; onCapture: (file: Fi
                 <video ref={videoRef} autoPlay playsInline className={`w-full h-full object-cover ${isPreview ? 'hidden' : ''}`}></video>
                 <canvas ref={canvasRef} className={`w-full h-full object-contain ${isPreview ? '' : 'hidden'}`}></canvas>
                 
-                {/* Overlay for alignment (only for camera view) */}
                 {!isPreview && (
                     <div className="absolute inset-0 pointer-events-none border-[1rem] sm:border-[2rem] border-black/50">
                         <div className="absolute top-4 left-4 sm:top-8 sm:left-8 border-t-4 border-l-4 border-white h-12 w-12 sm:h-16 sm:w-16 opacity-75 rounded-tl-lg"></div>
@@ -391,12 +451,10 @@ const DocumentScannerModal: React.FC<{ onClose: () => void; onCapture: (file: Fi
                     </div>
                 }
                 
-                {/* Close Button */}
                 <button onClick={onClose} className="absolute top-4 right-4 p-3 bg-black/50 rounded-full text-white hover:bg-black/75 transition-colors z-10">
                     <XMarkIcon className="w-6 h-6" />
                 </button>
 
-                {/* Control Buttons */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent flex justify-center items-center">
                     {isPreview ? (
                         <div className="flex items-center justify-around w-full max-w-xs">
@@ -429,7 +487,13 @@ const CaseDocuments: React.FC<CaseDocumentsProps> = ({ caseId }) => {
     const [isCameraOpen, setIsCameraOpen] = React.useState(false);
 
     const caseDocuments = React.useMemo(() => 
-        documents.filter(doc => doc.caseId === caseId).sort((a,b) => b.addedAt.getTime() - a.addedAt.getTime()), 
+        documents
+            .filter(doc => doc.caseId === caseId)
+            .sort((a,b) => {
+                const dateA = a.addedAt instanceof Date ? a.addedAt : new Date(a.addedAt);
+                const dateB = b.addedAt instanceof Date ? b.addedAt : new Date(b.addedAt);
+                return dateB.getTime() - dateA.getTime();
+            }), 
         [documents, caseId]
     );
 
@@ -496,6 +560,8 @@ const CaseDocuments: React.FC<CaseDocumentsProps> = ({ caseId }) => {
             if (file) {
                 const url = URL.createObjectURL(file);
                 window.open(url, '_blank');
+            } else {
+                setPreviewDoc(doc); // Let the modal handle the error/missing state display
             }
         } else {
             setPreviewDoc(doc);
@@ -504,6 +570,7 @@ const CaseDocuments: React.FC<CaseDocumentsProps> = ({ caseId }) => {
 
     return (
         <div className="space-y-4">
+            {/* Upload Area */}
             <div className="flex flex-col sm:flex-row gap-4">
                  <input type="file" id={`file-upload-${caseId}`} multiple className="hidden" onChange={(e) => handleFileChange(e.target.files)} />
                  <div 
@@ -515,23 +582,24 @@ const CaseDocuments: React.FC<CaseDocumentsProps> = ({ caseId }) => {
                  >
                     <label 
                         htmlFor={`file-upload-${caseId}`} 
-                        className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg cursor-pointer hover:bg-gray-100 transition-colors h-full ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
+                        className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-xl cursor-pointer hover:bg-gray-50 transition-colors h-full ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
                     >
                         <DocumentArrowUpIcon className="w-10 h-10 text-gray-400 mb-2" />
-                        <span className="font-semibold text-gray-700">اسحب وأفلت الملفات هنا، أو اضغط للاختيار</span>
-                        <p className="text-xs text-gray-500">يمكنك إضافة الصور، ملفات PDF، ومستندات Word</p>
+                        <span className="font-semibold text-gray-700">اضغط لرفع الوثائق أو اسحبها هنا</span>
+                        <p className="text-xs text-gray-500">سيتم حفظها محلياً وحذفها من السحابة بعد 24 ساعة</p>
                     </label>
                 </div>
                 <button
                     onClick={() => setIsCameraOpen(true)}
-                    className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                    className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors"
                 >
                     <CameraIcon className="w-10 h-10 text-gray-400 mb-2" />
                     <span className="font-semibold text-gray-700">التقاط وثيقة</span>
-                    <p className="text-xs text-gray-500">استخدم كاميرا جهازك</p>
+                    <p className="text-xs text-gray-500">مسح ضوئي سريع</p>
                 </button>
             </div>
             
+            {/* Gallery Grid */}
             {caseDocuments.length > 0 ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
                     {caseDocuments.map(doc => (
@@ -539,8 +607,9 @@ const CaseDocuments: React.FC<CaseDocumentsProps> = ({ caseId }) => {
                     ))}
                 </div>
             ) : (
-                <div className="text-center py-8 text-gray-500">
-                    <p>لا توجد وثائق لهذه القضية بعد.</p>
+                <div className="flex flex-col items-center justify-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                    <DocumentTextIcon className="w-12 h-12 mb-2 opacity-50" />
+                    <p>لا توجد وثائق محفوظة لهذه القضية بعد.</p>
                 </div>
             )}
 
@@ -548,20 +617,25 @@ const CaseDocuments: React.FC<CaseDocumentsProps> = ({ caseId }) => {
                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setIsDeleteModalOpen(false)}>
                     <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
                         <div className="text-center">
-                            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4"><ExclamationTriangleIcon className="h-8 w-8 text-red-600" /></div>
-                            <h3 className="text-2xl font-bold">تأكيد حذف الوثيقة</h3>
-                            <p className="my-4">هل أنت متأكد من حذف وثيقة "{docToDelete.name}"؟</p>
-                        </div>
-                        <div className="mt-6 flex justify-center gap-4">
-                            <button className="px-6 py-2 bg-gray-200 rounded-lg" onClick={() => setIsDeleteModalOpen(false)}>إلغاء</button>
-                            <button className="px-6 py-2 bg-red-600 text-white rounded-lg" onClick={confirmDelete}>نعم، قم بالحذف</button>
+                            <ExclamationTriangleIcon className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                            <h3 className="text-lg font-bold mb-2">تأكيد الحذف</h3>
+                            <p className="text-gray-600 mb-6">هل أنت متأكد من حذف المستند "{docToDelete.name}"؟</p>
+                            <div className="flex justify-center gap-4">
+                                <button onClick={() => setIsDeleteModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded">إلغاء</button>
+                                <button onClick={confirmDelete} className="px-4 py-2 bg-red-600 text-white rounded">حذف</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
-            
-            {previewDoc && <PreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />}
-            {isCameraOpen && <DocumentScannerModal onClose={() => setIsCameraOpen(false)} onCapture={handlePhotoCapture} />}
+
+            {previewDoc && (
+                <PreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
+            )}
+
+            {isCameraOpen && (
+                <DocumentScannerModal onClose={() => setIsCameraOpen(false)} onCapture={handlePhotoCapture} />
+            )}
         </div>
     );
 };
