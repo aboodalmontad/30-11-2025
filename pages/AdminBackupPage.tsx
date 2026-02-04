@@ -1,8 +1,6 @@
-
 import * as React from 'react';
 import { CloudArrowDownIcon, CloudArrowUpIcon, CheckCircleIcon, ExclamationTriangleIcon, ArrowPathIcon } from '../components/icons';
 import { adminFetchFullDatabase, adminRestoreDatabase } from '../hooks/useOnlineData';
-import { getSupabaseClient } from '../supabaseClient';
 
 const AdminBackupPage: React.FC = () => {
     const [isDownloading, setIsDownloading] = React.useState(false);
@@ -14,7 +12,7 @@ const AdminBackupPage: React.FC = () => {
         setIsDownloading(true);
         setRestoreStatus(null);
         try {
-            // Fetch raw data from Supabase
+            // Fetch raw data from Supabase using the admin utility
             const data = await adminFetchFullDatabase();
             
             // Create a JSON blob
